@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Security Stack
+Parameters:
+  MyIP:
+    Type: String
+    Description: 'Your IP Address example: 10.11.12.13/32'
+    Default: 58.183.114.131/32
+
+# EC2SecurityGroup
+Resources:
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http https to client host
+      GroupName: raisetech-ec2-sg
+      VpcId: !ImportValue 'network-VpcId'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref MyIP
+
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+# RDS SecurityGroup
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow RDS to EC2
+      GroupName: raisetech-rds-sg
+      VpcId: !ImportValue 'network-VpcId'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref InstanceSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+# ALB SecurityGroup
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http https to client host
+      GroupName: raisetech-alb-sg
+      VpcId: !ImportValue 'network-VpcId'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 10.0.0.0/16
+
+# アウトプット
+Outputs:
+  ALBSecurityGroupId:
+    Description: ALB SecurityGroup ID
+    Value: !Ref ALBSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-ALBSecurityGroupId'
+
+  InstanceSecurityGroupId:
+    Description: EC2 SecurityGroup ID
+    Value: !Ref InstanceSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-InstanceSecurityGroupId'
+
+  RDSSecurityGroupId:
+    Description: RDS SecurityGroup ID
+    Value: !Ref RDSSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-RDSSecurityGroupId'
