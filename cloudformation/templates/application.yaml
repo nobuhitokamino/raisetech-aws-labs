@@ -1,0 +1,265 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Application Stack
+Parameters:
+  Keypair:
+    Description: 使用するキーペア入力
+    Type: String
+    Default: dev-raisetech-kypr-tokyo
+
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Latest Amazon Linux 2023 AMI
+
+  DBUsername:
+    Description: RDS master username
+    Type: String
+    Default: root
+
+Resources:
+# IAM Role
+  AppInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ReadDbPassword
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !ImportValue 'database-RdsSecretArn'
+
+  AppInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref AppInstanceRole
+# EC2
+  MyEC2:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: t3.micro
+      KeyName: !Ref Keypair
+      SubnetId: !ImportValue 'network-PublicSubnetAId'
+      SecurityGroupIds:
+        - !ImportValue 'security-InstanceSecurityGroupId'
+      IamInstanceProfile: !Ref AppInstanceProfile
+      Tags:
+        - Key: Name
+          Value: raisetech-ec2
+
+      UserData:
+        Fn::Base64:
+          Fn::Sub:
+            - |
+              #!/bin/bash
+              set -euo pipefail
+              # =====================================
+              # 1. 初期設定
+              # =====================================
+
+              APP_DIR="/home/ec2-user/aws-study"
+              APP_HOME="/opt/raisetech"
+              DB_HOST="${RdsEndpoint}"
+              DB_USER="${DBUsername}"
+              DB_SECRET_ARN="${RdsSecretArn}"
+              export AWS_DEFAULT_REGION="${AWS::Region}"
+
+              # =====================================
+              # 2. パッケージのインストール
+              # =====================================
+
+              dnf update -y
+              dnf install -y git java-21-amazon-corretto-devel mariadb105 jq
+
+              # =====================================
+              # 3. GitHubから取得・ビルド
+              # =====================================
+
+              git clone https://github.com/koujienami/aws-study.git "$APP_DIR"
+              chown -R ec2-user:ec2-user "$APP_DIR"
+
+              cd "$APP_DIR"
+              chmod +x gradlew
+
+              runuser -u ec2-user -- ./gradlew --no-daemon bootWar -x test
+
+              mkdir -p "$APP_HOME"
+              cp build/libs/*.war "$APP_HOME/app.war"
+              chmod 644 "$APP_HOME/app.war"
+
+              # =====================================
+              # 4. Spring Bootの環境変数
+              # =====================================
+
+              cat > /etc/raisetech-app.env <<EOF
+              SPRING_DATASOURCE_URL=jdbc:mysql://$DB_HOST:3306/awsstudy
+              SPRING_DATASOURCE_USERNAME=$DB_USER
+              SERVER_PORT=8080
+              AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION
+              DB_SECRET_ARN=$DB_SECRET_ARN
+              EOF
+
+              chmod 600 /etc/raisetech-app.env
+
+              # =====================================
+              # 5. RDS接続・DB初期化
+              # =====================================
+
+              DB_SECRET_JSON=$(aws secretsmanager get-secret-value \
+                --secret-id "$DB_SECRET_ARN" \
+                --query 'SecretString' \
+                --output text)
+
+              DB_PASSWORD=$(printf '%s' "$DB_SECRET_JSON" | jq -er '.password')
+              unset DB_SECRET_JSON
+
+              export MYSQL_PWD="$DB_PASSWORD"
+
+              # RDS接続を最大12回試行
+
+              for i in $(seq 1 12); do
+                if mysql -h "$DB_HOST" -u "$DB_USER" \
+                  --connect-timeout=5 -e "SELECT 1" >/dev/null 2>&1; then
+                  break
+                fi
+
+                if [ "$i" -eq 12 ]; then
+                echo "RDS connection failed"
+                exit 1
+                fi
+
+                sleep 10
+              done
+
+              mysql -h "$DB_HOST" -u "$DB_USER" awsstudy <<'SQL'
+              CREATE TABLE IF NOT EXISTS student (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                name VARCHAR(255) NOT NULL
+              );
+
+              INSERT INTO student (name)
+              SELECT 'Kouji Enami'
+              WHERE NOT EXISTS (
+                SELECT 1 FROM student WHERE name = 'Kouji Enami'
+              );
+              SQL
+
+              unset MYSQL_PWD DB_PASSWORD
+
+              # =====================================
+              # 6. アプリ起動用スクリプト
+              # =====================================
+
+              cat > /usr/local/bin/raisetech-start <<'SCRIPT'
+              #!/bin/bash
+              set -euo pipefail
+
+              # Secrets Managerから認証情報を取得
+              DB_SECRET_JSON=$(aws secretsmanager get-secret-value \
+                --secret-id "$DB_SECRET_ARN" \
+                --query 'SecretString' \
+                --output text)
+
+              # パスワードを取得してSpring Bootに渡す
+              SPRING_DATASOURCE_PASSWORD=$(printf '%s' "$DB_SECRET_JSON" | jq -er '.password')
+              export SPRING_DATASOURCE_PASSWORD
+              unset DB_SECRET_JSON
+
+              # Spring Bootを起動
+              exec /usr/bin/java -jar /opt/raisetech/app.war
+              SCRIPT
+
+              chmod 755 /usr/local/bin/raisetech-start
+
+              # =====================================
+              # 7. systemdサービスの作成
+              # =====================================
+
+              cat > /etc/systemd/system/raisetech-app.service <<'UNIT'
+              [Unit]
+              Description=RaiseTech Spring Boot Application
+              Wants=network-online.target
+              After=network-online.target
+
+              [Service]
+              Type=simple
+              User=ec2-user
+              WorkingDirectory=/opt/raisetech
+              EnvironmentFile=/etc/raisetech-app.env
+              ExecStart=/usr/local/bin/raisetech-start
+              Restart=on-failure
+              RestartSec=10
+
+              [Install]
+              WantedBy=multi-user.target
+              UNIT
+
+              # =====================================
+              # 8. systemd登録・起動
+              # =====================================
+              systemctl daemon-reload
+              systemctl enable --now raisetech-app
+
+            - RdsEndpoint: !ImportValue 'database-RdsEndpoint'
+              RdsSecretArn: !ImportValue 'database-RdsSecretArn'
+
+# ALB
+  MyALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: raisetech-alb
+      Subnets:
+        - !ImportValue 'network-PublicSubnetAId'
+        - !ImportValue 'network-PublicSubnetCId'
+      SecurityGroups:
+        - !ImportValue 'security-ALBSecurityGroupId'
+      Scheme: internet-facing
+      Type: application
+      Tags:
+        - Key: Name
+          Value: raisetech-alb
+
+  MyTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: raisetech-alb-tg
+      VpcId: !ImportValue 'network-VpcId'
+      Port: 8080
+      Protocol: HTTP
+      TargetType: instance
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      HealthCheckTimeoutSeconds: 5
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckPort: "traffic-port"
+      HealthCheckIntervalSeconds: 10
+      Matcher:
+        HttpCode: 200
+      Tags:
+        - Key: Name
+          Value: raisetech-alb-tg
+      Targets:
+        - Id: !Ref MyEC2
+          Port: 8080
+
+  MyListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref MyALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref MyTargetGroup

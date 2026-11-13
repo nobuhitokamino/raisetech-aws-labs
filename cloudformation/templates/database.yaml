@@ -1,0 +1,59 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Database Stack
+
+Parameters:
+  DBUsername:
+    Description: RDS master username
+    Type: String
+    Default: root
+
+# RDS
+Resources:
+  MyDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: DB SubnetGroup
+      SubnetIds:
+        - !ImportValue 'network-PrivateSubnetAId'
+        - !ImportValue 'network-PrivateSubnetCId'
+      Tags:
+        - Key: Name
+          Value: raisetech-db-subnet-group
+
+  MyRDS:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      DBName: awsstudy
+      Engine: mysql
+      DBInstanceClass: db.t3.micro
+      Port: 3306
+      AllocatedStorage: 20
+      MasterUsername: !Ref DBUsername
+      ManageMasterUserPassword: true
+      VPCSecurityGroups:
+        - !ImportValue 'security-RDSSecurityGroupId'
+      DBSubnetGroupName: !Ref MyDBSubnetGroup
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 1
+      StorageEncrypted: true
+      MultiAZ: false
+      DeletionProtection: false
+      Tags:
+        - Key: Name
+          Value: raisetech-rds
+
+# アウトプット
+Outputs:
+  RdsEndpoint:
+    Description: RDS Endpoint
+    Value: !GetAtt MyRDS.Endpoint.Address
+    Export:
+      Name: !Sub '${AWS::StackName}-RdsEndpoint'
+
+  RdsSecretArn:
+    Description: RDS master secret ARN
+    Value: !GetAtt MyRDS.MasterUserSecret.SecretArn
+    Export:
+      Name: !Sub '${AWS::StackName}-RdsSecretArn'
