@@ -7,13 +7,6 @@ Parameters:
     Type: String
     Default: root
 
-  DBPassword:
-    Description: Enter RDS master password (min 8 chars)
-    Type: String
-    NoEcho: true
-    MinLength: 8
-
-
 # RDS
 Resources:
   MyDBSubnetGroup:
@@ -38,7 +31,7 @@ Resources:
       Port: 3306
       AllocatedStorage: 20
       MasterUsername: !Ref DBUsername
-      MasterUserPassword: !Ref DBPassword
+      ManageMasterUserPassword: true
       VPCSecurityGroups:
         - !ImportValue 'security-RDSSecurityGroupId'
       DBSubnetGroupName: !Ref MyDBSubnetGroup
@@ -58,3 +51,9 @@ Outputs:
     Value: !GetAtt MyRDS.Endpoint.Address
     Export:
       Name: !Sub '${AWS::StackName}-RdsEndpoint'
+
+  RdsSecretArn:
+    Description: RDS master secret ARN
+    Value: !GetAtt MyRDS.MasterUserSecret.SecretArn
+    Export:
+      Name: !Sub '${AWS::StackName}-RdsSecretArn'

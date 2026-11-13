@@ -6,11 +6,15 @@ Parameters:
     Type: String
     Default: dev-raisetech-kypr-tokyo
 
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Latest Amazon Linux 2023 AMI
+
   DBUsername:
     Description: RDS master username
     Type: String
     Default: root
-
 
 Resources:
 # IAM Role
@@ -30,8 +34,9 @@ Resources:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action: ssm:GetParameter
-                Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/raisetech/db/master-password'
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !ImportValue 'database-RdsSecretArn'
 
   AppInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -42,7 +47,7 @@ Resources:
   MyEC2:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: 'ami-0ff7821278d341c9b'
+      ImageId: !Ref LatestAmiId
       InstanceType: t3.micro
       KeyName: !Ref Keypair
       SubnetId: !ImportValue 'network-PublicSubnetAId'
@@ -67,7 +72,7 @@ Resources:
               APP_HOME="/opt/raisetech"
               DB_HOST="${RdsEndpoint}"
               DB_USER="${DBUsername}"
-              DB_PARAM="/raisetech/db/master-password"
+              DB_SECRET_ARN="${RdsSecretArn}"
               export AWS_DEFAULT_REGION="${AWS::Region}"
 
               # =====================================
@@ -75,7 +80,7 @@ Resources:
               # =====================================
 
               dnf update -y
-              dnf install -y git java-21-amazon-corretto-devel mariadb105
+              dnf install -y git java-21-amazon-corretto-devel mariadb105 jq
 
               # =====================================
               # 3. GitHubから取得・ビルド
@@ -102,6 +107,7 @@ Resources:
               SPRING_DATASOURCE_USERNAME=$DB_USER
               SERVER_PORT=8080
               AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION
+              DB_SECRET_ARN=$DB_SECRET_ARN
               EOF
 
               chmod 600 /etc/raisetech-app.env
@@ -110,11 +116,13 @@ Resources:
               # 5. RDS接続・DB初期化
               # =====================================
 
-              DB_PASSWORD=$(aws ssm get-parameter \
-                --name "$DB_PARAM" \
-                --with-decryption \
-                --query 'Parameter.Value' \
+              DB_SECRET_JSON=$(aws secretsmanager get-secret-value \
+                --secret-id "$DB_SECRET_ARN" \
+                --query 'SecretString' \
                 --output text)
+
+              DB_PASSWORD=$(printf '%s' "$DB_SECRET_JSON" | jq -er '.password')
+              unset DB_SECRET_JSON
 
               export MYSQL_PWD="$DB_PASSWORD"
 
@@ -157,15 +165,18 @@ Resources:
               #!/bin/bash
               set -euo pipefail
 
-              DB_PASSWORD=$(aws ssm get-parameter \
-                --name /raisetech/db/master-password \
-                --with-decryption \
-                --query 'Parameter.Value' \
+              # Secrets Managerから認証情報を取得
+              DB_SECRET_JSON=$(aws secretsmanager get-secret-value \
+                --secret-id "$DB_SECRET_ARN" \
+                --query 'SecretString' \
                 --output text)
 
-              export SPRING_DATASOURCE_PASSWORD="$DB_PASSWORD"
-              unset DB_PASSWORD
+              # パスワードを取得してSpring Bootに渡す
+              SPRING_DATASOURCE_PASSWORD=$(printf '%s' "$DB_SECRET_JSON" | jq -er '.password')
+              export SPRING_DATASOURCE_PASSWORD
+              unset DB_SECRET_JSON
 
+              # Spring Bootを起動
               exec /usr/bin/java -jar /opt/raisetech/app.war
               SCRIPT
 
@@ -201,6 +212,7 @@ Resources:
               systemctl enable --now raisetech-app
 
             - RdsEndpoint: !ImportValue 'database-RdsEndpoint'
+              RdsSecretArn: !ImportValue 'database-RdsSecretArn'
 
 # ALB
   MyALB:
@@ -221,7 +233,7 @@ Resources:
   MyTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: aws-study-alb-targetgroup
+      Name: raisetech-alb-tg
       VpcId: !ImportValue 'network-VpcId'
       Port: 8080
       Protocol: HTTP

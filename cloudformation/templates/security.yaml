@@ -4,7 +4,6 @@ Parameters:
   MyIP:
     Type: String
     Description: 'Your IP Address example: 10.11.12.13/32'
-    Default: 58.183.114.131/32
 
 # EC2SecurityGroup
 Resources:
