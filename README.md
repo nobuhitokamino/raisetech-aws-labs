@@ -68,6 +68,22 @@ CloudFormationのスタックを機能ごとに分割し、`Outputs` / `Export` 
 - RDSのマスターパスワードはSecrets Managerで自動管理し、EC2のIAMロールを使用して取得します。
 - パスワードや秘密鍵などの機密情報はGitHubに保存しないでください。
 
+### Securityスタックのデプロイ例（AWS CLI）
+
+以下は、SSH接続元IPアドレスを指定してSecurityスタックを作成・更新する例です。
+
+```bash
+aws cloudformation deploy \
+  --stack-name security \
+  --template-file cloudformation/templates/security.yaml \
+  --parameter-overrides MyIP=203.0.113.10/32 \
+  --region ap-northeast-1
+```
+
+`203.0.113.10/32` は説明用のIPアドレスです。実行する際は、自分の接続元グローバルIPv4アドレスに置き換えてください。
+
+なお、このコマンドは `network` スタックの作成後に実行します。
+
 ## 4. 動作確認
 
 以下の項目について動作確認を実施しました。
