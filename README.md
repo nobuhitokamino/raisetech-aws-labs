@@ -6,7 +6,9 @@ AWSの各種サービスやInfrastructure as Code（IaC）の理解を深める�
 
 ## 1. 実装概要
 
-CloudFormationを使用し、Spring Bootアプリケーションを実行するAWSインフラ環境を構築しました。
+AWS CloudFormationを使用し、Spring Bootアプリケーションを実行するAWSインフラ環境を構築しました。
+
+機能ごとにスタックを分割し、アプリケーション環境に加えて、アクセス制御・ログ収集・監視・通知の仕組みを実装しています。
 
 主な構成は以下のとおりです。
 
@@ -17,6 +19,12 @@ CloudFormationを使用し、Spring Bootアプリケーションを実行するA
 - **Security Group**：各リソース間の通信制御
 - **Secrets Manager**：RDSの認証情報を自動管理
 - **systemd**：Spring Bootアプリケーションのサービス管理・自動起動
+- **AWS WAF**：AWSマネージドルールとカスタムルールによるアクセス制御
+- **S3**：ALBアクセスログの保存
+- **CloudWatch Logs**：アプリケーション・WAF・RDSのログ収集
+- **CloudWatch Alarm**：メトリクスを利用した異常検知
+- **Amazon SNS**：アラーム発報時のメール通知
+- **CloudWatch Dashboard**：主要メトリクスの一元表示
 
 なお、ALBは複数AZを使用していますが、EC2とRDSはそれぞれ1台の構成です。
 
@@ -26,8 +34,11 @@ CloudFormationを使用し、Spring Bootアプリケーションを実行するA
 |---|---|
 | `cloudformation/templates/network.yaml` | VPC、Subnet、IGW、Route Table |
 | `cloudformation/templates/security.yaml` | ALB・EC2・RDSのSecurity Group |
-| `cloudformation/templates/database.yaml` | RDS、DB Subnet Group、Secrets Manager連携 |
-| `cloudformation/templates/application.yaml` | EC2、ALB、Target Group、Listener、IAM、User Data |
+| `cloudformation/templates/database.yaml` | RDS、DB Subnet Group、Secrets Manager連携、RDSログ配信 |
+| `cloudformation/templates/application.yaml` | EC2、ALB、Target Group、Listener、IAM、User Data、CloudWatch Agent |
+| `cloudformation/templates/logging.yaml` | ALBアクセスログ用S3バケット、CloudWatch Log Group |
+| `cloudformation/templates/waf.yaml` | WebACL、ALBへの関連付け、WAFログ配信 |
+| `cloudformation/templates/monitoring.yaml` | CloudWatch Alarm、SNS、CloudWatch Dashboard |
 
 ## 3. CloudFormationスタックの構築手順
 
@@ -35,10 +46,42 @@ CloudFormationのスタックを機能ごとに分割し、`Outputs` / `Export` 
 
 ### スタックの作成順序
 
+以下の順序でスタックを作成します。
+
 1. `network`
 2. `security`
-3. `database`
-4. `application`
+3. `database`（RDSログエクスポートは無効）
+4. `logging`
+5. `database` の更新（RDSログエクスポートを有効化）
+6. `application`
+7. `waf`
+8. `monitoring`
+
+最終的なスタック数は7つです。RDSロググループとの競合を防ぐため、`database` スタックのみ初回作成後に更新します。
+
+### RDSログエクスポートの設定
+
+RDSのエラーログはCloudWatch Logsへ送信しています。
+
+初回構築時にRDSがロググループを自動作成すると、`logging` スタックで定義した同名のロググループと競合する可能性があります。
+
+そのため、`database.yaml` では `EnableRdsLogExport` パラメータを使用し、ログ配信の有効・無効を切り替えられるようにしています。
+
+| パラメータ値 | 動作 |
+|---|---|
+| `false` | RDSのエラーログエクスポートを有効にしない |
+| `true` | RDSのエラーログをCloudWatch Logsへ送信する |
+
+**初回構築手順**
+
+1. `database` スタック作成時に `EnableRdsLogExport=false` を明示的に指定する。
+2. `logging` スタックを作成し、RDS用ロググループを保持期間14日で作成する。
+3. `database` スタックを更新し、`EnableRdsLogExport=true` に変更する。
+4. CloudWatch LogsでRDSエラーログの配信を確認する。
+
+パラメータのデフォルト値は `true` なので、初回構築時は必ず `false` を指定してください。
+
+この手順により、RDSのログ配信設定とCloudWatch Logsの保持期間をCloudFormationで管理できます。
 
 ### スタック名・Export名の運用ルール
 
@@ -49,14 +92,19 @@ CloudFormationのスタックを機能ごとに分割し、`Outputs` / `Export` 
 - `network-VpcId`
 - `network-PublicSubnetAId`
 - `network-PrivateSubnetAId`
-- `security-InstanceSecurityGroupId`
-- `security-RDSSecurityGroupId`
 - `database-RdsEndpoint`
 - `database-RdsSecretArn`
+- `database-RdsInstanceIdentifier`
+- `logging-AlbLogsBucketName`
+- `logging-WafLogGroupArn`
+- `application-AlbArn`
+- `application-AlbFullName`
+- `application-TargetGroupFullName`
+- `application-Ec2InstanceId`
 
 各テンプレートでは、これらのExport名を `Fn::ImportValue` で参照しています。
 
-そのため、スタック作成時は上記のスタック名を使用してください。
+そのため、スタック作成時は上記の名称を使用してください。
 
 また、スタック間でExport値を参照するため、同じAWSアカウント・リージョン内で構築する必要があります。
 
@@ -66,6 +114,7 @@ CloudFormationのスタックを機能ごとに分割し、`Outputs` / `Export` 
 - EC2接続用のキーペアを事前に準備してください。
 - Amazon Linux 2023のAMIは、SSMパブリックパラメータを利用して取得します。
 - RDSのマスターパスワードはSecrets Managerで自動管理し、EC2のIAMロールを使用して取得します。
+- SNSのメール通知を利用するには、届いた確認メールからサブスクリプションを承認する必要があります。
 - パスワードや秘密鍵などの機密情報はGitHubに保存しないでください。
 
 ### Securityスタックのデプロイ例（AWS CLI）
@@ -84,31 +133,110 @@ aws cloudformation deploy \
 
 なお、このコマンドは `network` スタックの作成後に実行します。
 
-## 4. 動作確認
+## 4. ログ収集・監視構成
+
+### ログ収集
+
+以下の4種類のログを収集しています。
+
+| ログの種類 | 保存先 | 保存期間 |
+|---|---|---|
+| ALBアクセスログ | S3 | 14日 |
+| Spring Bootアプリケーションログ | CloudWatch Logs | 14日 |
+| WAFログ | CloudWatch Logs | 14日 |
+| RDSエラーログ | CloudWatch Logs | 14日 |
+
+Spring Bootのログは、EC2のUser DataでCloudWatch Agentをインストール・設定し、systemdのjournalから収集しています。
+
+ALBアクセスログはS3へ保存し、WAFログとRDSエラーログはそれぞれのログ配信機能を利用してCloudWatch Logsへ送信しています。
+
+### AWS WAF
+
+以下の2種類のルールを設定しています。
+
+| ルール | 内容 |
+|---|---|
+| `AWSManagedRulesCommonRuleSet` | AWSマネージドルールによる一般的なWeb攻撃への対策 |
+| `BlockTestHeader` | 指定したHTTPヘッダーに一致するリクエストを遮断 |
+
+カスタムルールでは、`x-raisetech-test: block-me` を指定したリクエストを遮断するよう設定しています。
+
+### CloudWatch Alarm・SNS
+
+CloudWatch Alarmで以下の5項目を監視しています。
+
+| アラーム | 監視内容 |
+|---|---|
+| ALB 5XX | ALB自身が返すHTTP 5XXエラー |
+| Target 5XX | アプリケーション側が返すHTTP 5XXエラー |
+| UnHealthyHostCount | 異常なターゲット数 |
+| EC2 CPU使用率 | EC2のCPU負荷 |
+| RDSストレージ使用率 | 空きストレージ容量から算出した使用率 |
+
+アラームがALARM状態になると、SNSトピックを経由してメール通知する構成です。
+
+### CloudWatch Dashboard
+
+以下の6つのメトリクスグラフを1つのダッシュボードに表示しています。
+
+1. ALBリクエスト数
+2. ターゲットの正常性（Healthy / Unhealthy）
+3. ALB・TargetのHTTP 5XXエラー
+4. EC2 CPU使用率
+5. RDS空きストレージ容量
+6. WAFの許可・遮断リクエスト数
+
+## 5. 動作確認
 
 以下の項目について動作確認を実施しました。
 
-- CloudFormationによるスタックの作成
+### アプリケーション・インフラ
+
+- CloudFormationによる7スタックの作成
 - User Dataによるアプリケーションの自動セットアップ
 - systemdによるSpring Bootの起動と自動起動設定
 - EC2再起動後のアプリケーション起動
 - Spring BootからRDSへの接続・データ取得
-- EC2上でのHTTP 200レスポンス
-- ALB経由でのアプリケーション表示
+- ALB経由でのHTTP 200レスポンス
 - Secrets Managerへの移行後の再構築・動作確認
 - EC2の置換後の動作確認
 
-## 5. 今後の学習予定
+### ログ収集
 
-- CloudWatch Logsによるログ収集・監視
-- AWS WAFによるWebアプリケーションの保護
+- ALBアクセスログのS3への保存
+- Spring BootログのCloudWatch Logsへの送信
+- WAFログのCloudWatch Logsへの送信
+- RDSエラーログのCloudWatch Logsへの送信
+
+### WAF・監視・通知
+
+- 通常アクセスでHTTP 200を確認
+- カスタムルールに一致するリクエストでHTTP 403を確認
+- WAFログに `BlockTestHeader` による `BLOCK` が記録されることを確認
+- CloudWatch AlarmからSNSへのメール通知を確認
+- Spring Bootを停止してALBターゲットの異常を検知
+- `UnHealthyHostCount` アラームの発報とSNS通知を確認
+- Spring Boot復旧後のアラーム解除を確認
+- CloudWatch Dashboardで6つのグラフの表示を確認
+
+なお、EC2 CPU使用率とRDSストレージ使用率については、実際に閾値を超えた状態でのアラーム検証は行っていません。
+
+## 6. 今後の学習予定
+
 - CloudFormationのNested Stacksによる構築
+- 監視項目やアラーム閾値の見直し
 - 構築・運用手順の改善
 
-## 6. 注意事項
+## 7. 注意事項
 
 本リポジトリは学習を目的としたものです。
 
-AWSリソースの作成・稼働には料金が発生する場合があります。検証後は不要なリソースを削除し、課金状況を確認してください。
+AWSリソースの作成・稼働には料金が発生する場合があります。EC2やRDSを停止しても、ストレージ、ALB、WAF、CloudWatchなどの料金が継続する場合があります。
 
-RDSなどのリソースは削除時の設定によってデータが失われる場合があるため、必要なデータは事前にバックアップしてください。
+また、RDSは停止可能な期間に制限があり、一定期間後に自動起動されます。
+
+検証後は不要なリソースを削除し、課金状況を確認してください。
+
+CloudFormationスタックの削除時には、`Fn::ImportValue` による依存関係に注意してください。
+
+S3バケットは `DeletionPolicy` の設定によってスタック削除後も残る場合があります。また、RDSなどのリソースは削除時の設定によってデータが失われるため、必要なデータは事前にバックアップしてください。
