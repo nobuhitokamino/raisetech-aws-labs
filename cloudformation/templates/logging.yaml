@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Logging Stack
+Resources:
+  # ALB Access Logs S3 Bucket
+  AlbLogsBucket:
+    Type: 'AWS::S3::Bucket'
+    DeletionPolicy: Delete
+    Properties:
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldLogs
+            Status: Enabled
+            ExpirationInDays: 14
+      PublicAccessBlockConfiguration:
+        BlockPublicPolicy: true
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  # ALB Access Logs Bucket Policy
+  AlbLogsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AlbLogsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowALBAccessLogs
+            Effect: Allow
+            Principal:
+              Service: logdelivery.elasticloadbalancing.amazonaws.com
+            Action:
+              - s3:PutObject
+            Resource: !Sub
+              "arn:${AWS::Partition}:s3:::${AlbLogsBucket}/alb/AWSLogs/${AWS::AccountId}/*"
+  # Spring Boot Application Logs
+  ApplicationLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /raisetech/application
+      RetentionInDays: 14
+
+  # WAF Logs
+  WafLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: aws-waf-logs-raisetech
+      RetentionInDays: 14
+
+  RdsErrorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        Fn::Sub:
+          - '/aws/rds/instance/${RdsId}/error'
+          - RdsId: !ImportValue database-RdsInstanceIdentifier
+      RetentionInDays: 14
+
+Outputs:
+  AlbLogsBucketName:
+    Description: S3 bucket name for ALB access logs
+    Value: !Ref AlbLogsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-AlbLogsBucketName'
+
+  ApplicationLogGroupName:
+    Description: CloudWatch Logs group for Spring Boot
+    Value: !Ref ApplicationLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-ApplicationLogGroupName'
+
+  WafLogGroupArn:
+    Description: CloudWatch Logs group ARN for WAF
+    Value: !Sub
+      'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${WafLogGroup}'
+    Export:
+      Name: !Sub '${AWS::StackName}-WafLogGroupArn'

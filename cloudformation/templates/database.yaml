@@ -7,6 +7,20 @@ Parameters:
     Type: String
     Default: root
 
+  EnableRdsLogExport:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable RDS error log export to CloudWatch Logs
+
+Conditions:
+  IsRdsLogExportEnabled:
+    Fn::Equals:
+      - !Ref EnableRdsLogExport
+      - 'true'
+
 # RDS
 Resources:
   MyDBSubnetGroup:
@@ -34,6 +48,11 @@ Resources:
       ManageMasterUserPassword: true
       VPCSecurityGroups:
         - !ImportValue 'security-RDSSecurityGroupId'
+      EnableCloudwatchLogsExports:
+        Fn::If:
+          - IsRdsLogExportEnabled
+          - [error]
+          - !Ref AWS::NoValue
       DBSubnetGroupName: !Ref MyDBSubnetGroup
       PubliclyAccessible: false
       BackupRetentionPeriod: 1
@@ -57,3 +76,9 @@ Outputs:
     Value: !GetAtt MyRDS.MasterUserSecret.SecretArn
     Export:
       Name: !Sub '${AWS::StackName}-RdsSecretArn'
+
+  RdsInstanceIdentifier:
+    Description: RDS DB instance identifier for CloudWatch alarms
+    Value: !Ref MyRDS
+    Export:
+      Name: !Sub '${AWS::StackName}-RdsInstanceIdentifier'

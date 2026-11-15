@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: WAF Stack
+
+Resources:
+  # WAF
+  MyWaf:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: raisetech-waf
+      Scope: REGIONAL
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: raisetech-waf
+      DefaultAction:
+        Allow: {}
+      Rules:
+      # カスタムルール
+        - Name: BlockTestHeader
+          Priority: 0
+          Statement:
+            ByteMatchStatement:
+              FieldToMatch:
+                SingleHeader:
+                  Name: x-raisetech-test
+              PositionalConstraint: EXACTLY
+              SearchString: block-me
+              TextTransformations:
+                - Priority: 0
+                  Type: NONE
+          Action:
+            Block: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: BlockTestHeader
+
+      # AWSマネージドルール
+        - Name: AWSCommonRuleSet
+          Priority: 1
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+          OverrideAction:
+            None: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSCommonRuleSet
+
+  # WAFとALBを関連付け
+  WebACLAssociation:
+    Type: 'AWS::WAFv2::WebACLAssociation'
+    Properties:
+      WebACLArn: !GetAtt MyWaf.Arn
+      ResourceArn: !ImportValue 'application-AlbArn'
+
+  # CloudWatch LogsへWAFログを配信
+  LoggingConfiguration:
+    Type: AWS::WAFv2::LoggingConfiguration
+    Properties:
+      ResourceArn: !GetAtt MyWaf.Arn
+      LogDestinationConfigs:
+        - !ImportValue 'logging-WafLogGroupArn'
+      RedactedFields:
+        - QueryString: {}
+        - SingleHeader:
+            Name: authorization
+        - SingleHeader:
+            Name: cookie
+
+Outputs:
+  WebACLArn:
+    Description: ARN of the WAF WebACL
+    Value: !GetAtt MyWaf.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-WebACLArn'
