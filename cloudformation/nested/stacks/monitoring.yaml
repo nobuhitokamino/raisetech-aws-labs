@@ -1,0 +1,308 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Monitoring Stack
+
+Parameters:
+  NotificationEmail:
+    Type: String
+    Description: Email address for alarm notifications
+
+  RdsAllocatedStorageGiB:
+    Type: Number
+    Default: 20
+    MinValue: 1
+    Description: RDS allocated storage size in GiB
+
+  Ec2InstanceId:
+    Type: AWS::EC2::Instance::Id
+    Description: EC2 Instance ID
+
+  RdsInstanceIdentifier:
+    Type: String
+    Description: RDS DB instance identifier
+
+  AlbFullName:
+    Type: String
+    Description: ALB Full Name
+
+  TargetGroupFullName:
+    Type: String
+    Description: TargetGroup FullName
+
+Resources:
+  # SNS Topic
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: raisetech-monitoring-alerts
+
+  # SNS Email Subscription
+  AlarmSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref AlarmTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+  # ALB 5XX Error Alarm
+  Alb5XXAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: raisetech-alb-5xx
+      AlarmDescription: Detect ALB-generated HTTP 5XX errors
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_ELB_5XX_Count
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !Ref AlbFullName
+      AlarmActions:
+        - !Ref AlarmTopic
+
+  # Target 5XX Error Alarm
+  Target5XXAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: raisetech-target-5xx
+      AlarmDescription: Detect target-generated HTTP 5XX errors
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_Target_5XX_Count
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !Ref AlbFullName
+        - Name: TargetGroup
+          Value: !Ref TargetGroupFullName
+      AlarmActions:
+        - !Ref AlarmTopic
+
+  # Unhealthy Target Alarm
+  UnHealthyHostAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: raisetech-unhealthy-host
+      AlarmDescription: Detect unhealthy ALB targets
+      Namespace: AWS/ApplicationELB
+      MetricName: UnHealthyHostCount
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !Ref AlbFullName
+        - Name: TargetGroup
+          Value: !Ref TargetGroupFullName
+      AlarmActions:
+        - !Ref AlarmTopic
+
+  # EC2 CPU Utilization Alarm
+  Ec2CPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: raisetech-ec2-high-cpu
+      AlarmDescription: Detect high EC2 CPU utilization
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 70
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: missing
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref Ec2InstanceId
+      AlarmActions:
+        - !Ref AlarmTopic
+
+  # RDS Storage Alarm
+  RdsStorageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: raisetech-rds-high-storage
+      AlarmDescription: Detect RDS storage utilization over 80 percent
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Threshold: 80
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      TreatMissingData: missing
+
+      Metrics:
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: AWS/RDS
+              MetricName: FreeStorageSpace
+              Dimensions:
+                - Name: DBInstanceIdentifier
+                  Value: !Ref RdsInstanceIdentifier
+            Period: 300
+            Stat: Average
+          ReturnData: false
+        - Id: e1
+          Expression: !Sub '100*(1-m1/(${RdsAllocatedStorageGiB}*1073741824))'
+          Label: RDS Storage Usage Percent
+          ReturnData: true
+
+      AlarmActions:
+        - !Ref AlarmTopic
+
+  # CloudWatch Dashboard
+  MonitoringDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: raisetech-infrastructure
+      DashboardBody:
+        Fn::Sub:
+          |
+            {
+              "widgets": [
+                {
+                  "type": "metric",
+                  "x": 0, "y": 0, "width": 12, "height": 6,
+                  "properties": {
+                    "title": "01 - ALB Request Count",
+                    "region": "${AWS::Region}",
+                    "view": "timeSeries",
+                    "period": 60,
+                    "stat": "Sum",
+                    "metrics": [
+                      [
+                        "AWS/ApplicationELB", "RequestCount",
+                        "LoadBalancer", "${AlbFullName}"
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 12, "y": 0, "width": 12, "height": 6,
+                  "properties": {
+                    "title": "02 - Target Health",
+                    "region": "${AWS::Region}",
+                    "view": "timeSeries",
+                    "period": 60,
+                    "metrics": [
+                      [
+                        "AWS/ApplicationELB", "HealthyHostCount",
+                        "LoadBalancer", "${AlbFullName}",
+                        "TargetGroup", "${TargetGroupFullName}",
+                        {"stat": "Minimum", "label": "Healthy"}
+                      ],
+                      [
+                        "AWS/ApplicationELB", "UnHealthyHostCount",
+                        "LoadBalancer", "${AlbFullName}",
+                        "TargetGroup", "${TargetGroupFullName}",
+                        {"stat": "Maximum", "label": "Unhealthy"}
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 0, "y": 6, "width": 12, "height": 6,
+                  "properties": {
+                    "title": "03 - ALB / Target 5XX Errors",
+                    "region": "${AWS::Region}",
+                    "view": "timeSeries",
+                    "period": 60,
+                    "stat": "Sum",
+                    "metrics": [
+                      [
+                        "AWS/ApplicationELB", "HTTPCode_ELB_5XX_Count",
+                        "LoadBalancer", "${AlbFullName}",
+                        {"label": "ALB 5XX"}
+                      ],
+                      [
+                        "AWS/ApplicationELB", "HTTPCode_Target_5XX_Count",
+                        "LoadBalancer", "${AlbFullName}",
+                        "TargetGroup", "${TargetGroupFullName}",
+                        {"label": "Target 5XX"}
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 12, "y": 6, "width": 12, "height": 6,
+                  "properties": {
+                    "title": "04 - EC2 CPU Utilization",
+                    "region": "${AWS::Region}",
+                    "view": "timeSeries",
+                    "period": 300,
+                    "stat": "Average",
+                    "yAxis": {
+                      "left": {"min": 0, "max": 100}
+                    },
+                    "metrics": [
+                      [
+                        "AWS/EC2", "CPUUtilization",
+                        "InstanceId", "${Ec2InstanceId}"
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 0, "y": 12, "width": 12, "height": 6,
+                  "properties": {
+                    "title": "05 - RDS Free Storage Space",
+                    "region": "${AWS::Region}",
+                    "view": "timeSeries",
+                    "period": 300,
+                    "stat": "Average",
+                    "metrics": [
+                      [
+                        "AWS/RDS", "FreeStorageSpace",
+                        "DBInstanceIdentifier", "${RdsInstanceIdentifier}"
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 12, "y": 12, "width": 12, "height": 6,
+                  "properties": {
+                    "title": "06 - WAF Allowed / Blocked Requests",
+                    "region": "${AWS::Region}",
+                    "view": "timeSeries",
+                    "period": 60,
+                    "stat": "Sum",
+                    "metrics": [
+                      [
+                        "AWS/WAFV2", "AllowedRequests",
+                        "WebACL", "raisetech-waf",
+                        "Rule", "ALL",
+                        "Region", "${AWS::Region}",
+                        {"label": "Allowed"}
+                      ],
+                      [
+                        "AWS/WAFV2", "BlockedRequests",
+                        "WebACL", "raisetech-waf",
+                        "Rule", "ALL",
+                        "Region", "${AWS::Region}",
+                        {"label": "Blocked"}
+                      ]
+                    ]
+                  }
+                }
+              ]
+            }
+
+Outputs:
+  AlarmTopicArn:
+    Description: SNS topic ARN for CloudWatch alarms
+    Value: !Ref AlarmTopic

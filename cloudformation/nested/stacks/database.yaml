@@ -1,0 +1,75 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Database Stack
+
+Parameters:
+  DBUsername:
+    Description: RDS master username
+    Type: String
+    Default: root
+
+  RdsInstanceIdentifier:
+    Type: String
+    Description: RDS DB instance identifier
+
+  RDSSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+
+  PrivateSubnetAId:
+    Type: AWS::EC2::Subnet::Id
+
+  PrivateSubnetCId:
+    Type: AWS::EC2::Subnet::Id
+
+# RDS
+Resources:
+  MyDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: DB SubnetGroup
+      SubnetIds:
+        - !Ref PrivateSubnetAId
+        - !Ref PrivateSubnetCId
+      Tags:
+        - Key: Name
+          Value: raisetech-db-subnet-group
+
+  MyRDS:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      DBName: awsstudy
+      Engine: mysql
+      DBInstanceClass: db.t3.micro
+      Port: 3306
+      AllocatedStorage: 20
+      MasterUsername: !Ref DBUsername
+      ManageMasterUserPassword: true
+      DBInstanceIdentifier: !Ref RdsInstanceIdentifier
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroupId
+      EnableCloudwatchLogsExports:
+        - 'error'
+      DBSubnetGroupName: !Ref MyDBSubnetGroup
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 1
+      StorageEncrypted: true
+      MultiAZ: false
+      DeletionProtection: false
+      Tags:
+        - Key: Name
+          Value: raisetech-rds
+
+# アウトプット
+Outputs:
+  RdsEndpoint:
+    Description: RDS Endpoint
+    Value: !GetAtt MyRDS.Endpoint.Address
+
+  RdsSecretArn:
+    Description: RDS master secret ARN
+    Value: !GetAtt MyRDS.MasterUserSecret.SecretArn
+
+  RdsInstanceIdentifier:
+    Description: RDS DB instance identifier for CloudWatch alarms
+    Value: !Ref MyRDS
