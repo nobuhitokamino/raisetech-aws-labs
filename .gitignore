@@ -1,0 +1,5 @@
+# CloudFormation package output
+/cloudformation/nested/packaged.yaml
+
+# macOS
+.DS_Store

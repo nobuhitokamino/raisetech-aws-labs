@@ -1,0 +1,121 @@
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: RaiseTech AWS Nested Stacks Root
+
+Parameters:
+  MyIP:
+    Type: String
+    Description: SSH access source IP (example 203.0.113.10/32)
+
+  Keypair:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Existing EC2 key pair name
+    Default: dev-raisetech-kypr-tokyo
+
+  DBUsername:
+    Type: String
+    Default: root
+    Description: RDS master username
+
+  RdsInstanceIdentifier:
+    Type: String
+    Default: raisetech-nested-rds
+    Description: RDS DB instance identifier
+
+  NotificationEmail:
+    Type: String
+    Description: Email address for CloudWatch alarm notifications
+
+Resources:
+  # 1. Network
+  NetworkStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: stacks/network.yaml
+
+  # 2. Security
+  SecurityStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: stacks/security.yaml
+      Parameters:
+        MyIP: !Ref MyIP
+        VpcId: !GetAtt NetworkStack.Outputs.VpcId
+
+  # 3. Logging
+  LoggingStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: stacks/logging.yaml
+      Parameters:
+        RdsInstanceIdentifier: !Ref RdsInstanceIdentifier
+
+  # 4. Database
+  DatabaseStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: LoggingStack
+    Properties:
+      TemplateURL: stacks/database.yaml
+      Parameters:
+        DBUsername: !Ref DBUsername
+        RdsInstanceIdentifier: !Ref RdsInstanceIdentifier
+        RDSSecurityGroupId: !GetAtt SecurityStack.Outputs.RDSSecurityGroupId
+        PrivateSubnetAId: !GetAtt NetworkStack.Outputs.PrivateSubnetAId
+        PrivateSubnetCId: !GetAtt NetworkStack.Outputs.PrivateSubnetCId
+
+  # 5. Application
+  ApplicationStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: stacks/application.yaml
+      Parameters:
+        Keypair: !Ref Keypair
+        DBUsername: !Ref DBUsername
+        VpcId: !GetAtt NetworkStack.Outputs.VpcId
+        PublicSubnetAId: !GetAtt NetworkStack.Outputs.PublicSubnetAId
+        PublicSubnetCId: !GetAtt NetworkStack.Outputs.PublicSubnetCId
+        EC2SecurityGroupId: !GetAtt SecurityStack.Outputs.InstanceSecurityGroupId
+        ALBSecurityGroupId: !GetAtt SecurityStack.Outputs.ALBSecurityGroupId
+        RdsEndpoint: !GetAtt DatabaseStack.Outputs.RdsEndpoint
+        RdsSecretArn: !GetAtt DatabaseStack.Outputs.RdsSecretArn
+        ApplicationLogGroupName: !GetAtt LoggingStack.Outputs.ApplicationLogGroupName
+        AlbLogsBucketName: !GetAtt LoggingStack.Outputs.AlbLogsBucketName
+
+  # 6. WAF
+  WafStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: stacks/waf.yaml
+      Parameters:
+        AlbArn: !GetAtt ApplicationStack.Outputs.AlbArn
+        WafLogGroupArn: !GetAtt LoggingStack.Outputs.WafLogGroupArn
+
+  # 7. Monitoring
+  MonitoringStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: stacks/monitoring.yaml
+      Parameters:
+        NotificationEmail: !Ref NotificationEmail
+        RdsAllocatedStorageGiB: '20'
+        Ec2InstanceId: !GetAtt ApplicationStack.Outputs.Ec2InstanceId
+        RdsInstanceIdentifier: !GetAtt DatabaseStack.Outputs.RdsInstanceIdentifier
+        AlbFullName: !GetAtt ApplicationStack.Outputs.AlbFullName
+        TargetGroupFullName: !GetAtt ApplicationStack.Outputs.TargetGroupFullName
+
+Outputs:
+  AlbDnsName:
+    Description: Application Load Balancer DNS name
+    Value: !GetAtt ApplicationStack.Outputs.AlbDnsName
+
+  RdsEndpoint:
+    Description: RDS endpoint address
+    Value: !GetAtt DatabaseStack.Outputs.RdsEndpoint
+
+  WafArn:
+    Description: WAF WebACL ARN
+    Value: !GetAtt WafStack.Outputs.WebACLArn
+
+  AlarmTopicArn:
+    Description: SNS topic ARN for CloudWatch alarms
+    Value: !GetAtt MonitoringStack.Outputs.AlarmTopicArn
