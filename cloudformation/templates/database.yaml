@@ -54,7 +54,7 @@ Resources:
           - [error]
           - !Ref AWS::NoValue
       DBSubnetGroupName: !Ref MyDBSubnetGroup
-      PubliclyAccessible: false
+      PubliclyAccessible: true
       BackupRetentionPeriod: 1
       StorageEncrypted: true
       MultiAZ: false
