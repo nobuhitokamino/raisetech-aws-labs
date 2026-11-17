@@ -10,6 +10,10 @@ AWS CloudFormationを使用し、Spring Bootアプリケーションを実行す
 
 機能ごとにスタックを分割し、アプリケーション環境に加えて、アクセス制御・ログ収集・監視・通知の仕組みを実装しています。
 
+CloudFormationでは、機能ごとにスタックを個別管理する構成に加え、Nested Stacksによる一括管理構成も実装しました。両方の構成を通じて、スタック間の依存関係やParameters・Outputsを利用した値の受け渡しについて学習しました。
+
+また、CloudFormation Guardによるセキュリティ検証とGitHub ActionsによるCIを導入し、一部テンプレートの静的解析と検証を自動化しています。
+
 主な構成は以下のとおりです。
 
 - **VPC**：Public / Private Subnetを2つのAZに配置
@@ -39,12 +43,24 @@ AWS CloudFormationを使用し、Spring Bootアプリケーションを実行す
 | `cloudformation/templates/logging.yaml` | ALBアクセスログ用S3バケット、CloudWatch Log Group |
 | `cloudformation/templates/waf.yaml` | WebACL、ALBへの関連付け、WAFログ配信 |
 | `cloudformation/templates/monitoring.yaml` | CloudWatch Alarm、SNS、CloudWatch Dashboard |
+| `.github/workflows/cloudformation-check.yaml` |	GitHub Actionsによる自動検証 |
+| `cloudformation/guard/rules/rds.guard` | RDSのセキュリティルール |
+| `cloudformation/guard/tests/rds_tests.yaml` | Guardの単体テスト |
+| `cloudformation/docs/guard-validation.md` |セキュリティ検証結果 |
+| `cloudformation/nested/root.yaml` | Nested Stacksの親テンプレート |
+| `cloudformation/nested/stacks/` |	7つの子スタック用テンプレート |
+| `cloudformation/nested/README.md` |	Nested Stacksの構築手順・動作検証結果 |
 
 ## 3. CloudFormationスタックの構築手順
 
-CloudFormationのスタックを機能ごとに分割し、`Outputs` / `Export` と `Fn::ImportValue` を使用して連携させています。
+CloudFormationでは、個別スタック版とNested Stacks版の2種類の構成を実装しました。
 
-### スタックの作成順序
+個別スタック版では、Outputs / Export と Fn::ImportValue を使用してスタック間の値を連携しています。
+
+Nested Stacks版では、親スタックから子スタックへParametersを渡し、子スタックのOutputsを参照することで、依存関係を管理しています。
+
+### 個別スタック版の構築
+#### スタックの作成順序
 
 以下の順序でスタックを作成します。
 
@@ -59,7 +75,7 @@ CloudFormationのスタックを機能ごとに分割し、`Outputs` / `Export` 
 
 最終的なスタック数は7つです。RDSロググループとの競合を防ぐため、`database` スタックのみ初回作成後に更新します。
 
-### RDSログエクスポートの設定
+#### RDSログエクスポートの設定
 
 RDSのエラーログはCloudWatch Logsへ送信しています。
 
@@ -83,7 +99,7 @@ RDSのエラーログはCloudWatch Logsへ送信しています。
 
 この手順により、RDSのログ配信設定とCloudWatch Logsの保持期間をCloudFormationで管理できます。
 
-### スタック名・Export名の運用ルール
+#### スタック名・Export名の運用ルール
 
 各スタックのExport名は、`スタック名-出力名` の形式で定義しています。
 
@@ -108,7 +124,7 @@ RDSのエラーログはCloudWatch Logsへ送信しています。
 
 また、スタック間でExport値を参照するため、同じAWSアカウント・リージョン内で構築する必要があります。
 
-### 構築時の注意事項
+#### 構築時の注意事項
 
 - Securityスタックの `MyIP` パラメータには、SSH接続元のグローバルIPv4アドレスをCIDR形式（`/32`）で指定してください。
 - EC2接続用のキーペアを事前に準備してください。
@@ -117,7 +133,7 @@ RDSのエラーログはCloudWatch Logsへ送信しています。
 - SNSのメール通知を利用するには、届いた確認メールからサブスクリプションを承認する必要があります。
 - パスワードや秘密鍵などの機密情報はGitHubに保存しないでください。
 
-### Securityスタックのデプロイ例（AWS CLI）
+#### Securityスタックのデプロイ例（AWS CLI）
 
 以下は、SSH接続元IPアドレスを指定してSecurityスタックを作成・更新する例です。
 
@@ -132,6 +148,38 @@ aws cloudformation deploy \
 `203.0.113.10/32` は説明用のIPアドレスです。実行する際は、自分の接続元グローバルIPv4アドレスに置き換えてください。
 
 なお、このコマンドは `network` スタックの作成後に実行します。
+
+---
+### Nested Stacks版による一括構築
+
+個別に管理していた7つのCloudFormationスタックを、Nested Stacks構成へ再編成しました。
+
+親スタック（`root.yaml`）から7つの子スタックを一括で作成・管理できる構成としています。
+
+**個別スタック版との主な違い**
+
+| 比較項目 | 個別スタック版 | Nested Stacks版 |
+|---|---|---|
+| 構成 | 独立した7スタック | 親スタックと7つの子スタック |
+| デプロイ | スタックごとに実行 | 親スタックから一括実行 |
+| 値の受け渡し | Export / ImportValue | Parameters / Outputs / GetAtt |
+| 依存関係 | スタック間参照や作成順序で管理 | 親スタックで依存関係を管理 |
+
+Nested Stacks版では、親スタックから子スタックへParametersを渡し、子スタックのOutputsを参照することで、必要な値の受け渡しと依存関係の管理を行っています。
+
+また、`aws cloudformation package`によるテンプレートのS3アップロードと、変更セットによるデプロイ前の確認を実践しました。
+
+**動作検証結果**
+
+- 親スタックから7つの子スタックの一括作成に成功
+- Spring Bootアプリケーションの起動とALB経由でのHTTP 200を確認
+- WAFによるHTTP 403の遮断を確認
+- ALB・アプリケーション・WAF・RDSのログ収集を確認
+- CloudWatch Alarm・SNSによる通知とDashboardの表示を確認
+
+Nested Stacks版の構成、デプロイ手順、依存関係、検証結果については、以下にまとめています。
+
+**[Nested Stacks版の詳細README](cloudformation/nested/README.md)**
 
 ## 4. ログ収集・監視構成
 
@@ -192,7 +240,8 @@ CloudWatch Alarmで以下の5項目を監視しています。
 
 ### アプリケーション・インフラ
 
-- CloudFormationによる7スタックの作成
+- CloudFormationによる個別7スタックの構築
+- Nested Stacksによる親スタックと7つの子スタックの一括構築
 - User Dataによるアプリケーションの自動セットアップ
 - systemdによるSpring Bootの起動と自動起動設定
 - EC2再起動後のアプリケーション起動
@@ -221,9 +270,37 @@ CloudWatch Alarmで以下の5項目を監視しています。
 
 なお、EC2 CPU使用率とRDSストレージ使用率については、実際に閾値を超えた状態でのアラーム検証は行っていません。
 
+### CloudFormationの静的検証・CI
+
+CloudFormationテンプレートの品質とセキュリティを確認するため、`cfn-lint`と`CloudFormation Guard`を導入しました。
+
+また、GitHub Actionsを使用して、mainブランチへのpushおよびPull Requestを契機に、検証を自動実行するCIを構築しました。
+
+**検証内容**
+
+| ツール | 検証内容 | 結果 |
+|---|---|---|
+| cfn-lint | network・database・applicationの3テンプレートの静的解析 | 成功 |
+| cfn-guard test | RDSの非公開ルールに対する4件の単体テスト | 全件成功 |
+| cfn-guard validate | database.yamlのRDSパブリックアクセス設定を検証 | PASS |
+| GitHub Actions | 上記の検証をUbuntu Runner上で自動実行 | 成功 |
+
+GitHub Actionsで全Stepが正常終了することを確認しました（実行時間：24秒）。
+
+今回のGuardルールは、RDSの`PubliclyAccessible`が明示的に`false`であることを確認するものです。
+
+なお、検証対象は上記のテンプレートとルールに限定しています。
+
+**関連資料**
+
+- [CloudFormation Guardの検証記録](cloudformation/docs/guard-validation.md)
+- [GitHub Actionsワークフロー](.github/workflows/cloudformation-check.yaml)
+
 ## 6. 今後の学習予定
 
-- CloudFormationのNested Stacksによる構築
+- GitHub ActionsのCIにおける異常系テスト
+- CloudFormation Guardのセキュリティルール追加
+- CIによる検証対象テンプレートの拡大
 - 監視項目やアラーム閾値の見直し
 - 構築・運用手順の改善
 
