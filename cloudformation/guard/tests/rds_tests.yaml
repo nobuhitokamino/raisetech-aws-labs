@@ -1,0 +1,40 @@
+
+---
+- name: private_rds
+  input:
+    Resources:
+      Database:
+        Type: AWS::RDS::DBInstance
+        Properties:
+          PubliclyAccessible: false
+  expectations:
+    rules:
+      RDS_NOT_PUBLIC: PASS
+
+- name: public_rds
+  input:
+    Resources:
+      Database:
+        Type: AWS::RDS::DBInstance
+        Properties:
+          PubliclyAccessible: true
+  expectations:
+    rules:
+      RDS_NOT_PUBLIC: FAIL
+
+- name: missing_property
+  input:
+    Resources:
+      Database:
+        Type: AWS::RDS::DBInstance
+        Properties: {}
+  expectations:
+    rules:
+      RDS_NOT_PUBLIC: FAIL
+
+- name: no_rds
+  input:
+    Resources: {}
+  expectations:
+    rules:
+      RDS_NOT_PUBLIC: SKIP

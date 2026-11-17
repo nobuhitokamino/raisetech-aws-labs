@@ -1,0 +1,9 @@
+
+let rds_instances = Resources.*[ Type == 'AWS::RDS::DBInstance' ]
+
+rule RDS_NOT_PUBLIC when %rds_instances !empty {
+    %rds_instances.Properties {
+        PubliclyAccessible exists
+        PubliclyAccessible == false
+    }
+}
