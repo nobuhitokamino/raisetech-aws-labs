@@ -291,6 +291,27 @@ GitHub Actionsで全Stepが正常終了することを確認しました（実�
 
 なお、検証対象は上記のテンプレートとルールに限定しています。
 
+**CIの異常系テスト**
+
+GitHub Actionsがセキュリティルール違反を正しく検出できるか確認するため、テスト用ブランチで異常系テストを実施しました。
+
+RDSの`PubliclyAccessible`を`false`から`true`へ一時的に変更し、Pull Requestを作成してCIを実行しました。
+
+| 検証内容 | 結果 |
+|---|---|
+| 正常な設定でのCI実行 | 成功 |
+| RDSのPubliclyAccessibleをtrueに変更 | GuardがFAILを検出 |
+| GitHub Actionsによるルール違反の検出 | CI失敗 |
+| 設定をfalseに戻して再実行 | CI成功 |
+
+Guardの検証ログでは、`MyRDS`の`PubliclyAccessible`がルールに違反していることを確認しました。
+
+これにより、正常な設定ではCIが成功し、セキュリティルール違反がある場合はCIが失敗すること、また修正後に再び成功することを確認できました。
+
+検証はテスト用ブランチで行い、Pull Requestはmainブランチへマージせずにクローズしました。
+
+**[異常系テストのPull Request（#6）](https://github.com/nobuhitokamino/raisetech-aws-labs/pull/6)**
+
 **関連資料**
 
 - [CloudFormation Guardの検証記録](cloudformation/docs/guard-validation.md)
@@ -298,7 +319,6 @@ GitHub Actionsで全Stepが正常終了することを確認しました（実�
 
 ## 6. 今後の学習予定
 
-- GitHub ActionsのCIにおける異常系テスト
 - CloudFormation Guardのセキュリティルール追加
 - CIによる検証対象テンプレートの拡大
 - 監視項目やアラーム閾値の見直し
