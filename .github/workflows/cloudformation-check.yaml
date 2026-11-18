@@ -42,12 +42,26 @@ jobs:
           cfn-lint --version
 
       # 4. CloudFormation Guardをインストール
-      - name: Install CloudFormation Guard
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf \
-            https://raw.githubusercontent.com/aws-cloudformation/cloudformation-guard/main/install-guard.sh | sh
 
-          echo "$HOME/.guard/bin" >> "$GITHUB_PATH"
+      - name: Install CloudFormation Guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download 3.2.2 \
+            --repo aws-cloudformation/cloudformation-guard \
+            --pattern 'cfn-guard-v3-ubuntu-latest.tar.gz' \
+            --dir "$RUNNER_TEMP"
+
+          tar -xzf "$RUNNER_TEMP/cfn-guard-v3-ubuntu-latest.tar.gz" \
+            -C "$RUNNER_TEMP"
+
+          mkdir -p "$RUNNER_TEMP/guard-bin"
+
+          install -m 755 \
+            "$RUNNER_TEMP/cfn-guard-v3-ubuntu-latest/cfn-guard" \
+            "$RUNNER_TEMP/guard-bin/cfn-guard"
+
+          echo "$RUNNER_TEMP/guard-bin" >> "$GITHUB_PATH"
 
       # 5. Guardのバージョンを確認
       - name: Check Guard version
