@@ -1,0 +1,40 @@
+
+---
+- name: encrypted_rds
+  input:
+    Resources:
+      Database:
+        Type: AWS::RDS::DBInstance
+        Properties:
+          StorageEncrypted: true
+  expectations:
+    rules:
+      RDS_STORAGE_ENCRYPTED: PASS
+
+- name: unencrypted_rds
+  input:
+    Resources:
+      Database:
+        Type: AWS::RDS::DBInstance
+        Properties:
+          StorageEncrypted: false
+  expectations:
+    rules:
+      RDS_STORAGE_ENCRYPTED: FAIL
+
+- name: missing_encryption
+  input:
+    Resources:
+      Database:
+        Type: AWS::RDS::DBInstance
+        Properties: {}
+  expectations:
+    rules:
+      RDS_STORAGE_ENCRYPTED: FAIL
+
+- name: no_rds
+  input:
+    Resources: {}
+  expectations:
+    rules:
+      RDS_STORAGE_ENCRYPTED: SKIP

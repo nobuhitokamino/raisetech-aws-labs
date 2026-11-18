@@ -83,3 +83,19 @@ jobs:
             --data templates/database.yaml \
             --type CFNTemplate \
             --show-summary all
+
+      # 11. RDS暗号化ルールの単体テスト
+      - name: Run Guard encryption tests
+        run: |
+          cfn-guard test \
+            --rules-file guard/rules/rds-encryption.guard \
+            --test-data guard/tests/rds-encryption_tests.yaml
+
+      # 12. RDSストレージ暗号化の検証
+      - name: Validate RDS encryption
+        run: |
+          cfn-guard validate \
+            --rules guard/rules/rds-encryption.guard \
+            --data templates/database.yaml \
+            --type CFNTemplate \
+            --show-summary all

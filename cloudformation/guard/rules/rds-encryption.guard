@@ -1,0 +1,9 @@
+
+let rds_instances = Resources.*[ Type == 'AWS::RDS::DBInstance' ]
+
+rule RDS_STORAGE_ENCRYPTED when %rds_instances !empty {
+    %rds_instances.Properties {
+        StorageEncrypted exists
+        StorageEncrypted == true
+    }
+}
