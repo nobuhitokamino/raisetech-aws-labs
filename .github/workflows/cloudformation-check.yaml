@@ -53,19 +53,29 @@ jobs:
       - name: Check Guard version
         run: cfn-guard --version
 
-      # 6. CloudFormationの構文チェック
+      # 6. CloudFormationの静的解析
       - name: Run cfn-lint
         run: |
           cfn-lint -t templates/*.yaml
 
-      # 7. Guardルールの単体テスト
+      # 7. Nested Stacksの子テンプレートを検証
+      - name: Lint nested child stacks
+        run: |
+          cfn-lint -t nested/stacks/*.yaml
+
+      # 8. Nested Stacksの親テンプレートを検証
+      - name: Lint nested root stack
+        run: |
+          cfn-lint -i W3002 -- nested/root.yaml
+
+      # 9. Guardルールの単体テスト
       - name: Run Guard tests
         run: |
           cfn-guard test \
             --rules-file guard/rules/rds.guard \
             --test-data guard/tests/rds_tests.yaml
 
-      # 8. RDSテンプレートのセキュリティ検証
+      # 10. RDSテンプレートのセキュリティ検証
       - name: Validate RDS security
         run: |
           cfn-guard validate \
