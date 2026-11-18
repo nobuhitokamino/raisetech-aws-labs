@@ -56,10 +56,7 @@ jobs:
       # 6. CloudFormationの構文チェック
       - name: Run cfn-lint
         run: |
-          cfn-lint -t \
-            templates/network.yaml \
-            templates/database.yaml \
-            templates/application.yaml
+          cfn-lint -t templates/*.yaml
 
       # 7. Guardルールの単体テスト
       - name: Run Guard tests
