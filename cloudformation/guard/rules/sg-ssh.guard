@@ -3,14 +3,43 @@ let security_groups = Resources.*[
     Type == 'AWS::EC2::SecurityGroup'
 ]
 
+# MyIPに許可する入力制限（IPv4の/32）
+let safe_myip_pattern = '^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])/32$'
+
 rule NO_PUBLIC_SSH when %security_groups !empty {
 
-    let public_ssh = %security_groups.Properties.SecurityGroupIngress[
+    # TCPの22番ポートを含むインバウンドルール
+    let ssh_rules = %security_groups.Properties.SecurityGroupIngress[
         IpProtocol == 'tcp'
         FromPort <= 22
         ToPort >= 22
+    ]
+
+    # 全世界公開のSSH
+    let public_ssh = %ssh_rules[
         CidrIp == '0.0.0.0/0'
     ]
 
+    # Refを使用しているSSH
+    let ssh_with_ref = %ssh_rules[
+        CidrIp.'Ref' exists
+    ]
+
+    # MyIP以外を参照しているSSH
+    let unsupported_ref = %ssh_with_ref[
+        CidrIp.'Ref' != 'MyIP'
+    ]
+
+    # 全世界公開は禁止
     %public_ssh empty
+
+    # MyIP以外のRefは禁止
+    %unsupported_ref empty
+
+    # MyIPを参照する場合はパラメータの制約を検証
+    when %ssh_with_ref !empty {
+        Parameters.MyIP.Type == 'String'
+        Parameters.MyIP.AllowedPattern exists
+        Parameters.MyIP.AllowedPattern == %safe_myip_pattern
+    }
 }
