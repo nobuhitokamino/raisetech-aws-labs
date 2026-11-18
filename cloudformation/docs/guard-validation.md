@@ -161,3 +161,29 @@ CloudFormation Guardによって、RDSの非公開設定とストレージ暗号
 GitHub Actionsでは、合計15テンプレートの静的解析と、8件のGuard単体テスト、2種類のセキュリティルールによるテンプレート検証を自動化した。
 
 なお、Guardはテンプレートの設定を静的に検証するものであり、稼働中のAWS環境全体のセキュリティを保証するものではない。
+
+## 9. CI実行時のトラブルシューティング
+
+### 9.1 CloudFormation Guardのインストール失敗
+
+**発生した問題**
+
+GitHub ActionsでCloudFormation Guardのインストール処理中にHTTP 403エラーが発生した。
+
+その結果、後続Stepで`cfn-guard: command not found`となり、CIが失敗した。
+
+**原因調査**
+
+GitHubからのダウンロード要求が拒否されていた。
+
+GitHub APIのアクセス制限などが考えられるが、403エラーの詳細な原因は特定できていない。
+
+**対処内容**
+
+- GitHub CLI（gh）を利用するインストール方法へ変更
+- GitHub Actionsのトークンを利用して認証
+- CloudFormation Guardのバージョンを3.2.2に固定
+
+**結果**
+
+修正後のGitHub ActionsでGuardのインストールと全検証Stepが正常終了した。
