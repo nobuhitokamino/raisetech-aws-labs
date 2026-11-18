@@ -113,3 +113,19 @@ jobs:
             --data templates/database.yaml \
             --type CFNTemplate \
             --show-summary all
+
+      # 13. Security GroupのSSH公開ルールを単体テスト
+      - name: Run Guard SSH tests
+        run: |
+          cfn-guard test \
+            --rules-file guard/rules/sg-ssh.guard \
+            --test-data guard/tests/sg-ssh_tests.yaml
+
+      # 14. Security GroupのSSH公開設定を検証
+      - name: Validate SSH security
+        run: |
+          cfn-guard validate \
+            --rules guard/rules/sg-ssh.guard \
+            --data templates/security.yaml \
+            --type CFNTemplate \
+            --show-summary all

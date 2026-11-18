@@ -1,0 +1,68 @@
+
+---
+- name: restricted_ssh
+  input:
+    Resources:
+      MySecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+          SecurityGroupIngress:
+            - IpProtocol: tcp
+              FromPort: 22
+              ToPort: 22
+              CidrIp: 203.0.113.10/32
+  expectations:
+    rules:
+      NO_PUBLIC_SSH: PASS
+
+- name: public_ssh
+  input:
+    Resources:
+      MySecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+          SecurityGroupIngress:
+            - IpProtocol: tcp
+              FromPort: 22
+              ToPort: 22
+              CidrIp: 0.0.0.0/0
+  expectations:
+    rules:
+      NO_PUBLIC_SSH: FAIL
+
+- name: public_http
+  input:
+    Resources:
+      MySecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+          SecurityGroupIngress:
+            - IpProtocol: tcp
+              FromPort: 80
+              ToPort: 80
+              CidrIp: 0.0.0.0/0
+  expectations:
+    rules:
+      NO_PUBLIC_SSH: PASS
+
+- name: public_port_range
+  input:
+    Resources:
+      MySecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+          SecurityGroupIngress:
+            - IpProtocol: tcp
+              FromPort: 20
+              ToPort: 30
+              CidrIp: 0.0.0.0/0
+  expectations:
+    rules:
+      NO_PUBLIC_SSH: FAIL
+
+- name: no_security_group
+  input:
+    Resources: {}
+  expectations:
+    rules:
+      NO_PUBLIC_SSH: SKIP

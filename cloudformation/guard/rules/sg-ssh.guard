@@ -1,0 +1,16 @@
+
+let security_groups = Resources.*[
+    Type == 'AWS::EC2::SecurityGroup'
+]
+
+rule NO_PUBLIC_SSH when %security_groups !empty {
+
+    let public_ssh = %security_groups.Properties.SecurityGroupIngress[
+        IpProtocol == 'tcp'
+        FromPort <= 22
+        ToPort >= 22
+        CidrIp == '0.0.0.0/0'
+    ]
+
+    %public_ssh empty
+}
