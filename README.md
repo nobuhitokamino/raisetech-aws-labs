@@ -274,7 +274,7 @@ CloudWatch Alarmで以下の5項目を監視しています。
 
 `cfn-lint`とAWS CloudFormation Guardを使用し、CloudFormationテンプレートの静的解析とセキュリティ検証を実施しています。
 
-GitHub Actionsでは、pushおよびPull Request時にこれらの検証を自動実行します。
+GitHub Actionsでは、pushおよびPull Request時に検証を自動実行します。
 
 **検証内容**
 
@@ -283,25 +283,27 @@ GitHub Actionsでは、pushおよびPull Request時にこれらの検証を自�
 | cfn-lint | 個別スタック版7件とNested Stacks版8件の静的解析 | 成功 |
 | Guard test | RDS非公開ルール4件 | 全件成功 |
 | Guard test | RDS暗号化ルール4件 | 全件成功 |
-| Guard test | SSH公開制限ルール11件 | 全件成功 |
+| Guard test | SSH公開制限ルール26件 | 全件成功 |
 | Guard validate | RDS非公開設定 | PASS |
 | Guard validate | RDSストレージ暗号化 | PASS |
 | Guard validate | SSH公開制限 | PASS |
 | GitHub Actions | 上記の検証を自動実行 | 成功 |
 
-`cfn-lint`による静的解析は合計15テンプレートを対象としています。
+`cfn-lint`による静的解析は、個別スタック版7テンプレートとNested Stacks版の親・子8テンプレート、合計15テンプレートを対象としています。
 
 Nested Stacks版の親テンプレートについては、デプロイ前に`aws cloudformation package`でローカルのTemplateURLをS3 URLへ変換する構成のため、`W3002`警告のみを除外して検証しています。
 
-CloudFormation Guardでは、以下の3つのセキュリティルールを定義しています。
+CloudFormation Guardでは、以下の3種類のセキュリティルールを定義しています。
 
 - `RDS_NOT_PUBLIC`：RDSのパブリックアクセス禁止
 - `RDS_STORAGE_ENCRYPTED`：RDSのストレージ暗号化を必須とする
 - `NO_PUBLIC_SSH`：Security GroupのSSH公開制限
 
-SSH公開制限では、直接指定したCIDRに加え、`!Ref MyIP`と参照元パラメータの`AllowedPattern`も検証しています。
+SSH公開制限では、IPv4・IPv6、全プロトコル許可、Security Group内部と独立Ingressの両方を検証対象としています。
 
-GitHub Actionsにより、15テンプレートの静的解析、Guardの単体テスト19件、3種類のセキュリティ検証が正常終了することを確認しました。
+また、`!Ref MyIP`を使用する場合は、参照先パラメータの`AllowedPattern`も検証しています。
+
+GitHub Actionsにより、15テンプレートの静的解析、Guardの単体テスト34件、3種類のセキュリティ検証が正常終了することを確認しました。
 
 詳細な検証内容と結果は、[CloudFormation Guard検証記録](cloudformation/docs/guard-validation.md)を参照してください。
 
