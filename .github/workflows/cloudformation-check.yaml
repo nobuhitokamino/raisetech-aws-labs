@@ -129,3 +129,30 @@ jobs:
             --data templates/security.yaml \
             --type CFNTemplate \
             --show-summary all
+
+      # 15 Nested Stacks版のRDS非公開設定を検証
+      - name: Validate nested RDS security
+        run: |
+          cfn-guard validate \
+            --rules guard/rules/rds.guard \
+            --data nested/stacks/database.yaml \
+            --type CFNTemplate \
+            --show-summary all
+
+      # 16 Nested Stacks版のRDS暗号化を検証
+      - name: Validate nested RDS encryption
+        run: |
+          cfn-guard validate \
+            --rules guard/rules/rds-encryption.guard \
+            --data nested/stacks/database.yaml \
+            --type CFNTemplate \
+            --show-summary all
+
+      # 17 Nested Stacks版のSSH公開設定を検証
+      - name: Validate nested SSH security
+        run: |
+          cfn-guard validate \
+            --rules guard/rules/sg-ssh.guard \
+            --data nested/stacks/security.yaml \
+            --type CFNTemplate \
+            --show-summary all
