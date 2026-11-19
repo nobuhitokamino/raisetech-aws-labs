@@ -1,12 +1,18 @@
 
+# SecurityGroupリソースを取得
 let security_groups = Resources.*[
     Type == 'AWS::EC2::SecurityGroup'
+]
+
+# 独立したSecurityGroupIngressリソースを取得
+let standalone_ingress = Resources.*[
+    Type == 'AWS::EC2::SecurityGroupIngress'
 ]
 
 # MyIPに許可する入力制限（IPv4の/32）
 let safe_myip_pattern = '^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])/32$'
 
-rule NO_PUBLIC_SSH when %security_groups !empty {
+rule NO_PUBLIC_SSH when %security_groups !empty OR %standalone_ingress !empty {
 
     # TCPの22番ポートを含むインバウンドルール
     let ssh_rules = %security_groups.Properties.SecurityGroupIngress[
@@ -15,9 +21,54 @@ rule NO_PUBLIC_SSH when %security_groups !empty {
         ToPort >= 22
     ]
 
-    # 全世界公開のSSH
-    let public_ssh = %ssh_rules[
+    # IPv4で全プロトコルを全世界に公開する設定を検出
+    let public_all_protocols_ipv4 = %security_groups.Properties.SecurityGroupIngress[
+        IpProtocol == '-1'
         CidrIp == '0.0.0.0/0'
+    ]
+
+    # IPv4の全世界公開SSHを検出
+    let public_ssh_ipv4 = %ssh_rules[
+        CidrIp == '0.0.0.0/0'
+    ]
+
+    # 独立リソースでIPv4のSSH全世界公開を検出
+    let standalone_public_ssh_ipv4 = %standalone_ingress[
+        Properties.IpProtocol == 'tcp'
+        Properties.FromPort <= 22
+        Properties.ToPort >= 22
+        Properties.CidrIp == '0.0.0.0/0'
+    ]
+
+    # 独立Ingress：IPv4の全プロトコル公開
+    let standalone_all_protocols_ipv4 = %standalone_ingress[
+        Properties.IpProtocol == '-1'
+        Properties.CidrIp == '0.0.0.0/0'
+    ]
+
+    # IPv6で全プロトコルを全世界に公開する設定を検出
+    let public_all_protocols_ipv6 = %security_groups.Properties.SecurityGroupIngress[
+    IpProtocol == '-1'
+    CidrIpv6 == '::/0'
+    ]
+
+    # IPv6の全世界公開SSHを検出
+    let public_ssh_ipv6 = %ssh_rules[
+        CidrIpv6 == '::/0'
+    ]
+
+    # 独立Ingress：IPv6のSSH全世界公開
+    let standalone_public_ssh_ipv6 = %standalone_ingress[
+        Properties.IpProtocol == 'tcp'
+        Properties.FromPort <= 22
+        Properties.ToPort >= 22
+        Properties.CidrIpv6 == '::/0'
+    ]
+
+    # 独立Ingress：IPv6の全プロトコル公開
+    let standalone_all_protocols_ipv6 = %standalone_ingress[
+        Properties.IpProtocol == '-1'
+        Properties.CidrIpv6 == '::/0'
     ]
 
     # Refを使用しているSSH
@@ -30,14 +81,58 @@ rule NO_PUBLIC_SSH when %security_groups !empty {
         CidrIp.'Ref' != 'MyIP'
     ]
 
-    # 全世界公開は禁止
-    %public_ssh empty
+    # 独立Ingress：SSHのCIDRでRefを使用している設定
+    let standalone_ssh_with_ref = %standalone_ingress[
+        Properties.IpProtocol == 'tcp'
+        Properties.FromPort <= 22
+        Properties.ToPort >= 22
+        Properties.CidrIp.'Ref' exists
+    ]
+
+    # 独立Ingress：MyIP以外を参照している設定
+    let standalone_unsupported_ref = %standalone_ssh_with_ref[
+        Properties.CidrIp.'Ref' != 'MyIP'
+    ]
+
+    # IPv4の全世界公開は禁止
+    %public_ssh_ipv4 empty
+
+    # IPv4の全プロトコル公開は禁止
+    %public_all_protocols_ipv4 empty
+
+    # 独立リソースのIPv4 SSH全世界公開は禁止
+    %standalone_public_ssh_ipv4 empty
+
+    # 独立IngressのIPv4全プロトコル公開は禁止
+    %standalone_all_protocols_ipv4 empty
+
+    # IPv6の全世界公開は禁止
+    %public_ssh_ipv6 empty
+
+    # IPv6の全プロトコル公開は禁止
+    %public_all_protocols_ipv6 empty
+
+    # 独立IngressのIPv6 SSH公開は禁止
+    %standalone_public_ssh_ipv6 empty
+
+    # 独立IngressのIPv6全プロトコル公開は禁止
+    %standalone_all_protocols_ipv6 empty
 
     # MyIP以外のRefは禁止
     %unsupported_ref empty
 
     # MyIPを参照する場合はパラメータの制約を検証
     when %ssh_with_ref !empty {
+        Parameters.MyIP.Type == 'String'
+        Parameters.MyIP.AllowedPattern exists
+        Parameters.MyIP.AllowedPattern == %safe_myip_pattern
+    }
+
+    # 独立IngressでMyIP以外を参照する設定は禁止
+    %standalone_unsupported_ref empty
+
+    # 独立IngressでRefを使う場合はMyIPの入力制約を確認
+    when %standalone_ssh_with_ref !empty {
         Parameters.MyIP.Type == 'String'
         Parameters.MyIP.AllowedPattern exists
         Parameters.MyIP.AllowedPattern == %safe_myip_pattern

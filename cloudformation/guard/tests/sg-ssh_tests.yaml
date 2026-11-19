@@ -186,3 +186,243 @@
   expectations:
     rules:
       NO_PUBLIC_SSH: FAIL
+
+- name: public_ssh_ipv6
+  input:
+    Resources:
+      MySecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+          SecurityGroupIngress:
+            - IpProtocol: tcp
+              FromPort: 22
+              ToPort: 22
+              CidrIpv6: '::/0'
+  expectations:
+    rules:
+      NO_PUBLIC_SSH: FAIL
+
+- name: restricted_ssh_ipv6
+  input:
+    Resources:
+      MySecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+          SecurityGroupIngress:
+            - IpProtocol: tcp
+              FromPort: 22
+              ToPort: 22
+              CidrIpv6: '2001:db8::1/128'
+  expectations:
+    rules:
+      NO_PUBLIC_SSH: PASS
+
+- name: public_http_ipv6
+  input:
+    Resources:
+      MySecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+          SecurityGroupIngress:
+            - IpProtocol: tcp
+              FromPort: 80
+              ToPort: 80
+              CidrIpv6: '::/0'
+  expectations:
+    rules:
+      NO_PUBLIC_SSH: PASS
+
+- name: public_all_protocols_ipv4
+  input:
+    Resources:
+      MySecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+          SecurityGroupIngress:
+            - IpProtocol: '-1'
+              CidrIp: 0.0.0.0/0
+  expectations:
+    rules:
+      NO_PUBLIC_SSH: FAIL
+
+- name: public_all_protocols_ipv6
+  input:
+    Resources:
+      MySecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+          SecurityGroupIngress:
+            - IpProtocol: '-1'
+              CidrIpv6: '::/0'
+  expectations:
+    rules:
+      NO_PUBLIC_SSH: FAIL
+
+- name: standalone_public_ssh_ipv4
+  input:
+    Resources:
+      MySecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+          GroupDescription: Test security group
+
+      MySSHIngress:
+        Type: AWS::EC2::SecurityGroupIngress
+        Properties:
+          GroupId:
+            Ref: MySecurityGroup
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+  expectations:
+    rules:
+      NO_PUBLIC_SSH: FAIL
+
+- name: standalone_only_public_ssh
+  input:
+    Resources:
+      MySSHIngress:
+        Type: AWS::EC2::SecurityGroupIngress
+        Properties:
+          GroupId: sg-example
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+  expectations:
+    rules:
+      NO_PUBLIC_SSH: FAIL
+
+- name: standalone_public_ssh_ipv6
+  input:
+    Resources:
+      MySSHIngress:
+        Type: AWS::EC2::SecurityGroupIngress
+        Properties:
+          GroupId: sg-example
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIpv6: '::/0'
+  expectations:
+    rules:
+      NO_PUBLIC_SSH: FAIL
+
+- name: standalone_all_protocols_ipv4
+  input:
+    Resources:
+      MySSHIngress:
+        Type: AWS::EC2::SecurityGroupIngress
+        Properties:
+          GroupId: sg-example
+          IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+  expectations:
+    rules:
+      NO_PUBLIC_SSH: FAIL
+
+- name: standalone_all_protocols_ipv6
+  input:
+    Resources:
+      MySSHIngress:
+        Type: AWS::EC2::SecurityGroupIngress
+        Properties:
+          GroupId: sg-example
+          IpProtocol: '-1'
+          CidrIpv6: '::/0'
+  expectations:
+    rules:
+      NO_PUBLIC_SSH: FAIL
+
+- name: standalone_restricted_ssh_ipv4
+  input:
+    Resources:
+      MySSHIngress:
+        Type: AWS::EC2::SecurityGroupIngress
+        Properties:
+          GroupId: sg-example
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 203.0.113.10/32
+  expectations:
+    rules:
+      NO_PUBLIC_SSH: PASS
+
+- name: standalone_public_http
+  input:
+    Resources:
+      MyHTTPIngress:
+        Type: AWS::EC2::SecurityGroupIngress
+        Properties:
+          GroupId: sg-example
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+  expectations:
+    rules:
+      NO_PUBLIC_SSH: PASS
+
+- name: standalone_ssh_using_unrestricted_ref
+  input:
+    Parameters:
+      MyIP:
+        Type: String
+    Resources:
+      MySSHIngress:
+        Type: AWS::EC2::SecurityGroupIngress
+        Properties:
+          GroupId: sg-example
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp:
+            Ref: MyIP
+  expectations:
+    rules:
+      NO_PUBLIC_SSH: FAIL
+
+- name: standalone_restricted_myip_ref
+  input:
+    Parameters:
+      MyIP:
+        Type: String
+        AllowedPattern: '^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])/32$'
+    Resources:
+      MySSHIngress:
+        Type: AWS::EC2::SecurityGroupIngress
+        Properties:
+          GroupId: sg-example
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp:
+            Ref: MyIP
+  expectations:
+    rules:
+      NO_PUBLIC_SSH: PASS
+
+- name: standalone_unsupported_ref
+  input:
+    Parameters:
+      MyIP:
+        Type: String
+        AllowedPattern: '^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])/32$'
+      OtherIP:
+        Type: String
+        AllowedPattern: '^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])/32$'
+    Resources:
+      MySSHIngress:
+        Type: AWS::EC2::SecurityGroupIngress
+        Properties:
+          GroupId: sg-example
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp:
+            Ref: OtherIP
+  expectations:
+    rules:
+      NO_PUBLIC_SSH: FAIL
