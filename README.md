@@ -280,13 +280,13 @@ GitHub Actionsでは、pushおよびPull Request時に検証を自動実行し�
 
 | ツール | 検証内容 | 結果 |
 |---|---|---|
-| cfn-lint | 個別スタック版7件とNested Stacks版8件の静的解析 | 成功 |
+| cfn-lint | 個別版7件・Nested版8件、計15テンプレート | 成功 |
 | Guard test | RDS非公開ルール4件 | 全件成功 |
 | Guard test | RDS暗号化ルール4件 | 全件成功 |
 | Guard test | SSH公開制限ルール26件 | 全件成功 |
-| Guard validate | RDS非公開設定 | PASS |
-| Guard validate | RDSストレージ暗号化 | PASS |
-| Guard validate | SSH公開制限 | PASS |
+| Guard validate | RDS非公開（個別版・Nested版） | 2件PASS |
+| Guard validate | RDSストレージ暗号化（個別版・Nested版） | 2件PASS |
+| Guard validate | SSH公開制限（個別版・Nested版） | 2件PASS |
 | GitHub Actions | 上記の検証を自動実行 | 成功 |
 
 `cfn-lint`による静的解析は、個別スタック版7テンプレートとNested Stacks版の親・子8テンプレート、合計15テンプレートを対象としています。
@@ -303,7 +303,7 @@ SSH公開制限では、IPv4・IPv6、全プロトコル許可、Security Group�
 
 また、`!Ref MyIP`を使用する場合は、参照先パラメータの`AllowedPattern`も検証しています。
 
-GitHub Actionsにより、15テンプレートの静的解析、Guardの単体テスト34件、3種類のセキュリティ検証が正常終了することを確認しました。
+GitHub Actionsにより、15テンプレートの静的解析、Guardの単体テスト34件、3種類のセキュリティルールを個別スタック版とNested Stacks版の両方に適用した計6件の検証が正常終了することを確認しました。
 
 詳細な検証内容と結果は、[CloudFormation Guard検証記録](cloudformation/docs/guard-validation.md)を参照してください。
 
@@ -333,12 +333,56 @@ Guardの検証ログでは、`MyRDS`の`PubliclyAccessible`がルールに違反
 - [CloudFormation Guardの検証記録](cloudformation/docs/guard-validation.md)
 - [GitHub Actionsワークフロー](.github/workflows/cloudformation-check.yaml)
 
-## 6. 今後の学習予定
+## 6. レビュー結果・改善案・今後の課題
 
-- CloudFormation Guardのセキュリティルール追加
-- CIによる検証対象テンプレートの拡大
-- 監視項目やアラーム閾値の見直し
-- 構築・運用手順の改善
+### レビュー結果
+
+CloudFormationによるインフラ構築とAWS上での動作検証を完了した後、個別スタック版・Nested Stacks版のテンプレートについて、構成の整合性、セキュリティ、ログ収集・監視、運用面のレビューを実施しました。
+
+主な確認項目は以下のとおりです。
+
+- VPC、Subnet、Route Table、Security Groupの通信設定
+- スタック間の依存関係とParameters・Outputsの参照
+- IAMロール、Secrets Manager、RDS認証情報の管理
+- EC2 User Dataによるアプリケーション起動とDB初期化
+- ALB・WAF・CloudWatch Logsのログ出力設定
+- CloudWatch Alarm、SNS、Dashboardの監視設定
+- cfn-lint、CloudFormation Guard、GitHub Actionsによる自動検証
+
+レビュー中に、Nested Stacks版のSSH接続元パラメータの入力制限と、VPC CIDRの受け渡し方法を改善しました。また、Nested Stacks版もGuardの検証対象に追加し、GitHub Actionsで正常終了することを確認しました。
+
+今回確認した範囲では、直ちに修正が必要と判断できる重大な問題は見つかりませんでした。ただし、静的解析やコードレビューだけで、すべての運用条件における安全性や動作を保証するものではありません。
+
+### 改善案
+
+現在の構成は動作確認済みのため、大きな変更は行わず、保守性やセキュリティをさらに高めるための改善候補として整理しています。
+
+| 改善項目 | 優先度 | 改善の方向性 |
+|---|---|---|
+| DBユーザーの権限分離 | 中 | アプリケーション専用DBユーザーを用意し、最小権限にする |
+| MySQLの認証情報の受け渡し | 中 | `MYSQL_PWD`に代わる方法を検討する |
+| WAFの機密情報保護 | 中 | サンプリングリクエストの取り扱いとデータ保護設定を見直す |
+| S3バケットの削除手順 | 低 | アクセスログが残っている場合の削除方法を明確にする |
+| ネットワーク設定の管理 | 低 | サブネットCIDRのパラメータ化などを検討する |
+| Security Groupの設定 | 低 | 説明文の改善と必要に応じたアウトバウンド制限を検討する |
+| 固定リソース名 | 低 | 複数環境を同時構築する場合の名前競合対策を検討する |
+
+これらは現在の学習環境で直ちにすべて変更する必要があるものではなく、実運用や複数環境への展開を想定した場合の改善候補です。
+
+なお、個別スタック版のRDSロググループ作成時の競合については、RDSログエクスポートを無効にしてDatabaseStackを作成し、LoggingStack作成後に有効化する手順を実装・文書化済みです。
+
+### 今後の課題
+
+今回の学習では基本的なAWSインフラの構築、セキュリティ設定、ログ収集、監視、自動検証までを実装しました。
+
+今後は、以下の項目を発展的な学習課題とします。
+
+- **可用性の向上**：EC2のAuto ScalingやRDSのMulti-AZ構成を学習し、障害時の影響を軽減できる設計を検討する。
+- **セキュリティ検証の拡張**：CloudFormation Guardのルールを追加し、より多くのセキュリティ要件を自動検証する。
+- **CI/CDの発展**：現在の静的解析・セキュリティ検証に加え、デプロイ前確認やデプロイ自動化を検討する。
+- **監視・障害対応の改善**：アラーム閾値の見直しや、障害発生時の調査・復旧手順の整備を進める。
+
+これらは今回の構築で未実装の項目を整理したものであり、現在の学習環境の完成条件ではありません。
 
 ## 7. 注意事項
 
