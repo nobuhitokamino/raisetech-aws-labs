@@ -3,3 +3,12 @@
 
 # macOS
 .DS_Store
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfplan
+crash.log
+crash.*.log

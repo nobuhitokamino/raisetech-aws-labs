@@ -1,0 +1,205 @@
+#!/bin/bash
+set -euo pipefail
+
+# =====================================
+# 1. Initial Settings
+# =====================================
+
+APP_DIR="/home/ec2-user/aws-study"
+APP_HOME="/opt/raisetech"
+
+DB_HOST="${rds_endpoint}"
+DB_USER="${db_username}"
+DB_SECRET_ARN="${rds_secret_arn}"
+
+export AWS_DEFAULT_REGION="${aws_region}"
+
+# =====================================
+# 2. Install Packages
+# =====================================
+
+dnf update -y
+
+dnf install -y \
+  git \
+  java-21-amazon-corretto-devel \
+  mariadb105 \
+  jq \
+  curl \
+  amazon-cloudwatch-agent
+
+# =====================================
+# 3. Clone and Build Application
+# =====================================
+
+git clone https://github.com/koujienami/aws-study.git "$APP_DIR"
+
+chown -R ec2-user:ec2-user "$APP_DIR"
+
+cd "$APP_DIR"
+chmod +x gradlew
+
+runuser -u ec2-user -- ./gradlew --no-daemon bootWar -x test
+
+mkdir -p "$APP_HOME"
+cp build/libs/*.war "$APP_HOME/app.war"
+chmod 644 "$APP_HOME/app.war"
+
+# =====================================
+# 4. Spring Boot Environment Variables
+# =====================================
+
+cat > /etc/raisetech-app.env <<EOF
+SPRING_DATASOURCE_URL=jdbc:mysql://$DB_HOST:3306/awsstudy
+SPRING_DATASOURCE_USERNAME=$DB_USER
+SERVER_PORT=8080
+AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION
+DB_SECRET_ARN=$DB_SECRET_ARN
+EOF
+
+chmod 600 /etc/raisetech-app.env
+
+# =====================================
+# 5. Initialize Database
+# =====================================
+
+DB_SECRET_JSON=$(aws secretsmanager get-secret-value \
+  --secret-id "$DB_SECRET_ARN" \
+  --query 'SecretString' \
+  --output text)
+
+DB_PASSWORD=$(printf '%s' "$DB_SECRET_JSON" | jq -er '.password')
+unset DB_SECRET_JSON
+
+export MYSQL_PWD="$DB_PASSWORD"
+
+# Wait for RDS to become available
+for i in $(seq 1 12); do
+  if mysql -h "$DB_HOST" -u "$DB_USER" \
+    --connect-timeout=5 -e "SELECT 1" >/dev/null 2>&1; then
+    break
+  fi
+
+  if [ "$i" -eq 12 ]; then
+    echo "RDS connection failed"
+    exit 1
+  fi
+
+  sleep 10
+done
+
+mysql -h "$DB_HOST" -u "$DB_USER" awsstudy <<'SQL'
+CREATE TABLE IF NOT EXISTS student (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL
+);
+
+INSERT INTO student (name)
+SELECT 'Kouji Enami'
+WHERE NOT EXISTS (
+  SELECT 1 FROM student WHERE name = 'Kouji Enami'
+);
+SQL
+
+unset MYSQL_PWD DB_PASSWORD
+
+# =====================================
+# 6. Application Start Script
+# =====================================
+
+cat > /usr/local/bin/raisetech-start <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+
+DB_SECRET_JSON=$(aws secretsmanager get-secret-value \
+  --secret-id "$DB_SECRET_ARN" \
+  --query 'SecretString' \
+  --output text)
+
+SPRING_DATASOURCE_PASSWORD=$(printf '%s' "$DB_SECRET_JSON" | jq -er '.password')
+export SPRING_DATASOURCE_PASSWORD
+unset DB_SECRET_JSON
+
+exec /usr/bin/java -jar /opt/raisetech/app.war
+SCRIPT
+
+chmod 755 /usr/local/bin/raisetech-start
+
+# =====================================
+# 7. Create systemd Service
+# =====================================
+
+cat > /etc/systemd/system/raisetech-app.service <<'UNIT'
+[Unit]
+Description=RaiseTech Spring Boot Application
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/opt/raisetech
+EnvironmentFile=/etc/raisetech-app.env
+ExecStart=/usr/local/bin/raisetech-start
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+# =====================================
+# 8. CloudWatch Agent
+# =====================================
+
+cat > /opt/aws/amazon-cloudwatch-agent/etc/cloudwatch-agent.json <<'EOF'
+{
+  "logs": {
+    "logs_collected": {
+      "journald": {
+        "collect_list": [
+          {
+            "log_group_name": "${application_log_group_name}",
+            "log_stream_name": "{instance_id}",
+            "units": ["raisetech-app.service"],
+            "priority": "info"
+          }
+        ]
+      }
+    }
+  }
+}
+EOF
+
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+  -a fetch-config \
+  -m ec2 \
+  -s \
+  -c file:/opt/aws/amazon-cloudwatch-agent/etc/cloudwatch-agent.json
+
+systemctl enable amazon-cloudwatch-agent
+
+# =====================================
+# 9. Start Application
+# =====================================
+
+systemctl daemon-reload
+systemctl enable --now raisetech-app
+
+# Wait until Spring Boot responds successfully
+for i in $(seq 1 30); do
+  if curl -fsS --max-time 5 \
+    http://127.0.0.1:8080/ >/dev/null 2>&1; then
+    echo "Spring Boot is ready"
+    break
+  fi
+
+  if [ "$i" -eq 30 ]; then
+    echo "Spring Boot startup failed"
+    systemctl status raisetech-app --no-pager || true
+    journalctl -u raisetech-app -n 100 --no-pager || true
+    exit 1
+  fi
+
+  sleep 5
+done
