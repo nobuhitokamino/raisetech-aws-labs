@@ -25,7 +25,7 @@ resource "aws_db_instance" "main" {
 
   # Storage
   allocated_storage = 20
-  storage_encrypted = false
+  storage_encrypted = true
 
   # Network
   db_subnet_group_name   = aws_db_subnet_group.main.name
