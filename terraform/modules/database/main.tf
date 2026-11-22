@@ -30,7 +30,7 @@ resource "aws_db_instance" "main" {
   # Network
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [var.rds_sg_id]
-  publicly_accessible    = true
+  publicly_accessible    = false
   multi_az               = false
 
   # Backup and deletion
