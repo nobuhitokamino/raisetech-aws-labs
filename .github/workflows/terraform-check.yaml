@@ -53,3 +53,23 @@ jobs:
       - name: Terraform Validate
         working-directory: terraform/environments/dev
         run: terraform validate -no-color
+
+      # 6. Pythonを準備
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      # 7. Checkovをインストール
+      - name: Install Checkov
+        run: |
+          python -m pip install 'checkov==3.4.6'
+          checkov --version
+
+      # 8. Terraformのセキュリティ検証
+      - name: Check Terraform Security
+        run: |
+          checkov \
+            --directory terraform \
+            --framework terraform \
+            --check CKV_AWS_17,CKV_AWS_16,CKV_AWS_24
