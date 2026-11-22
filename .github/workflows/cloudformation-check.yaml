@@ -6,9 +6,17 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'cloudformation/**'
+      - '.github/workflows/cloudformation-check.yaml'
+
   pull_request:
     branches:
       - main
+    paths:
+      - 'cloudformation/**'
+      - '.github/workflows/cloudformation-check.yaml'
+
   workflow_dispatch:
 
 # GitHubの認証権限を読み取り専用にする

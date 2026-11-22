@@ -7,9 +7,17 @@ on:
     branches:
       - main
       - feature/terraform-cicd
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/terraform-check.yaml'
+
   pull_request:
     branches:
       - main
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/terraform-check.yaml'
+
   workflow_dispatch:
 
 # GitHubリポジトリへの権限
