@@ -1,36 +1,94 @@
 # RaiseTech AWS Labs
 
-RaiseTechのAWS課題を通じて取り組んだ、インフラ構築・設定・動作検証の学習記録です。
+RaiseTechのAWS課題を通じて取り組んだ、AWSインフラの構築・設定・動作検証・障害対応の学習記録です。
 
-AWSの各種サービスやInfrastructure as Code（IaC）の理解を深めることを目的としています。
+AWS CloudFormationとTerraformを使用し、Spring Bootアプリケーションを実行するAWSインフラ環境を構築しました。
+
+CloudFormationでは個別スタックとNested Stacksの両方を実装し、Terraformでは同じ用途のインフラ環境を7つのModuleに分割して再構築しています。
+
+Infrastructure as Code（IaC）による構成管理だけでなく、AWS上での動作検証、ログ収集、監視・通知、障害調査、リソース削除までを実践しています。
 
 ## 1. 実装概要
 
-AWS CloudFormationを使用し、Spring Bootアプリケーションを実行するAWSインフラ環境を構築しました。
+### 共通のAWSインフラ構成
 
-機能ごとにスタックを分割し、アプリケーション環境に加えて、アクセス制御・ログ収集・監視・通知の仕組みを実装しています。
+主に以下のAWSサービスと機能を使用しています。
 
-CloudFormationでは、機能ごとにスタックを個別管理する構成に加え、Nested Stacksによる一括管理構成も実装しました。両方の構成を通じて、スタック間の依存関係やParameters・Outputsを利用した値の受け渡しについて学習しました。
+| サービス・機能 | 実装内容 |
+|---|---|
+| VPC | 2つのAZにPublic / Private Subnetを配置 |
+| EC2 | Amazon Linux 2023、Java 21、Spring Boot |
+| RDS | MySQL（Single-AZ）、Secrets Managerによる認証情報管理 |
+| ALB | HTTP:80からEC2の8080番ポートへ転送 |
+| Security Group | ALB・EC2・RDS間の通信制御 |
+| IAM | EC2からSecrets Managerなどを利用するための権限設定 |
+| systemd | Spring Bootのサービス管理・自動起動 |
+| AWS WAF | AWSマネージドルールとカスタムルールによるアクセス制御 |
+| S3 | ALBアクセスログの保存 |
+| CloudWatch Logs | アプリケーション・WAF・RDSのログ収集 |
+| CloudWatch Alarm | 5種類の監視アラーム |
+| Amazon SNS | 異常検知時のメール通知 |
+| CloudWatch Dashboard | 主要メトリクスを6つのウィジェットで表示 |
 
-また、CloudFormation Guardによるセキュリティ検証とGitHub ActionsによるCIを導入し、一部テンプレートの静的解析と検証を自動化しています。
+ALBは2つのAZを使用していますが、EC2とRDSはそれぞれ1台です。EC2のAuto ScalingやRDSのMulti-AZは実装していません。
 
-主な構成は以下のとおりです。
+学習環境としてコストを抑え、基本的なAWSインフラ構築、アクセス制御、ログ収集、監視・通知の仕組みを検証しています。
 
-- **VPC**：Public / Private Subnetを2つのAZに配置
-- **EC2**：Amazon Linux 2023、Java 21、Spring Boot
-- **RDS**：MySQL（Single-AZ）
-- **ALB**：インターネットからのHTTPアクセスをEC2の8080番ポートへ転送
-- **Security Group**：各リソース間の通信制御
-- **Secrets Manager**：RDSの認証情報を自動管理
-- **systemd**：Spring Bootアプリケーションのサービス管理・自動起動
-- **AWS WAF**：AWSマネージドルールとカスタムルールによるアクセス制御
-- **S3**：ALBアクセスログの保存
-- **CloudWatch Logs**：アプリケーション・WAF・RDSのログ収集
-- **CloudWatch Alarm**：メトリクスを利用した異常検知
-- **Amazon SNS**：アラーム発報時のメール通知
-- **CloudWatch Dashboard**：主要メトリクスの一元表示
+### CloudFormation版
 
-なお、ALBは複数AZを使用していますが、EC2とRDSはそれぞれ1台の構成です。
+CloudFormationでは、以下の2種類の構成を実装しました。
+
+- **個別スタック版**：機能ごとに分割した7スタックを個別管理
+- **Nested Stacks版**：親スタックから7つの子スタックを一括管理
+
+個別スタック版ではOutputs・Export・ImportValueを、Nested Stacks版ではParameters・Outputsを利用してスタック間の値を連携しています。
+
+また、`cfn-lint`、CloudFormation Guard、GitHub Actionsを使用し、テンプレートの静的解析とセキュリティルールの検証を自動化しました。
+
+正常な設定でCIが成功することに加え、テスト用にセキュリティルール違反を発生させた場合にCIが失敗し、修正後に成功することも確認しています。
+
+**関連資料**
+
+- [Nested Stacks版の詳細](cloudformation/nested/README.md)
+- [CloudFormation Guard検証記録](cloudformation/docs/guard-validation.md)
+- [GitHub Actionsワークフロー](.github/workflows/cloudformation-check.yaml)
+
+### Terraform版
+
+CloudFormationで構築したAWS環境をTerraformで再構築しました。
+
+Root Moduleと7つのChild Moduleに分割し、Variables・Outputsによる値の受け渡し、リソース間の依存関係、S3 BackendによるState管理を実装しています。
+
+**主な実装・検証結果**
+
+| 項目 | 内容・結果 |
+|---|---|
+| Terraform管理リソース | 54リソース |
+| Module構成 | 7モジュール |
+| State管理 | S3 Backend、`use_lockfile`によるロック |
+| 初回構築 | 54リソース作成成功 |
+| アプリケーション | Spring Boot・RDS接続・ALB経由のHTTP 200 |
+| AWS WAF | 通常アクセスHTTP 200、遮断対象HTTP 403 |
+| ログ収集 | ALB・アプリケーション・WAF・RDSの4種類 |
+| 監視・通知 | CloudWatch Alarmによる異常検知、SNSメール通知 |
+| Dashboard | 6ウィジェットの作成・表示確認 |
+| 障害対応 | User Dataのエラー調査・修正・EC2置換・復旧 |
+| 最終差分確認 | `No changes` |
+| 環境削除 | 54リソース削除成功、残存リソース確認済み |
+
+初回構築では、Amazon Linux 2023の`curl-minimal`と、User Dataで追加インストールした`curl`が競合し、Spring Bootが起動しない問題が発生しました。
+
+`cloud-init`のログから原因を特定し、User Dataを修正してTerraformでEC2を置換しました。修正後はALB経由のHTTP 200を確認し、CloudWatch AlarmもOK状態へ復旧しました。
+
+これにより、Terraformによる構築だけでなく、障害調査・コード修正・再構築・復旧・削除の一連の流れを実践しました。
+
+**関連資料**
+
+- [Terraform版の詳細README](terraform/README.md)
+- [Terraform動作検証記録](terraform/docs/verification.md)
+- [Terraform障害調査・復旧記録](terraform/docs/troubleshooting.md)
+
+なお、Terraform版のGitHub ActionsによるCIは、今後の実装課題です。
 
 ## 2. ディレクトリ構成
 
@@ -50,6 +108,13 @@ CloudFormationでは、機能ごとにスタックを個別管理する構成に
 | `cloudformation/nested/root.yaml` | Nested Stacksの親テンプレート |
 | `cloudformation/nested/stacks/` |	7つの子スタック用テンプレート |
 | `cloudformation/nested/README.md` |	Nested Stacksの構築手順・動作検証結果 |
+| `terraform/README.md` | Terraform版の構成・設計・構築手順・実装結果 |
+| `terraform/environments/dev/` | Root Module、Backend、Provider、変数、Outputs |
+| `terraform/modules/` | 7つのChild Module |
+| `terraform/templates/user_data.sh.tftpl` | EC2のUser Dataテンプレート |
+| `terraform/docs/verification.md` | Terraform動作検証記録 |
+| `terraform/docs/troubleshooting.md` | Terraform障害調査・復旧記録 |
+| `terraform/docs/images/` | 動作検証のスクリーンショット |
 
 ## 3. CloudFormationスタックの構築手順
 
@@ -181,7 +246,7 @@ Nested Stacks版の構成、デプロイ手順、依存関係、検証結果に�
 
 **[Nested Stacks版の詳細README](cloudformation/nested/README.md)**
 
-## 4. ログ収集・監視構成
+## 4. CloudFormation版のログ収集・監視構成
 
 ### ログ収集
 
@@ -234,7 +299,7 @@ CloudWatch Alarmで以下の5項目を監視しています。
 5. RDS空きストレージ容量
 6. WAFの許可・遮断リクエスト数
 
-## 5. 動作確認
+## 5. CloudFormation版の動作確認
 
 以下の項目について動作確認を実施しました。
 
@@ -333,7 +398,7 @@ Guardの検証ログでは、`MyRDS`の`PubliclyAccessible`がルールに違反
 - [CloudFormation Guardの検証記録](cloudformation/docs/guard-validation.md)
 - [GitHub Actionsワークフロー](.github/workflows/cloudformation-check.yaml)
 
-## 6. レビュー結果・改善案・今後の課題
+## 6. CloudFormation版のレビュー結果・改善案・今後の課題
 
 ### レビュー結果
 
