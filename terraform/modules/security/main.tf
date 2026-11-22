@@ -62,7 +62,7 @@ resource "aws_vpc_security_group_ingress_rule" "ec2_ssh" {
   ip_protocol       = "tcp"
   from_port         = 22
   to_port           = 22
-  cidr_ipv4         = var.my_ip
+  cidr_ipv4         = "0.0.0.0/0"
 }
 
 # RDS Ingress
