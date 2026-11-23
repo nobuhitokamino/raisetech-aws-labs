@@ -73,3 +73,23 @@ jobs:
             --directory terraform \
             --framework terraform \
             --check CKV_AWS_17,CKV_AWS_16,CKV_AWS_24
+
+            # 6. Database Moduleのテスト準備
+      - name: Terraform Test Init - Database
+        working-directory: terraform/modules/database
+        run: terraform init -backend=false -input=false
+
+      # 9. Database Moduleのテスト
+      - name: Terraform Test - Database
+        working-directory: terraform/modules/database
+        run: terraform test -no-color
+
+      # 10. Security Moduleのテスト準備
+      - name: Terraform Test Init - Security
+        working-directory: terraform/modules/security
+        run: terraform init -backend=false -input=false
+
+      # 11. Security Moduleのテスト
+      - name: Terraform Test - Security
+        working-directory: terraform/modules/security
+        run: terraform test -no-color
