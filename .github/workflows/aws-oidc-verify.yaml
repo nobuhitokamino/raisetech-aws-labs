@@ -22,3 +22,14 @@ jobs:
 
       - name: Verify assumed IAM Role
         run: aws sts get-caller-identity
+
+      # Terraform Stateへの読み取りアクセスを確認
+      - name: Verify Terraform State Access
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+          aws s3api head-object \
+            --bucket "aws-multi-az-portfolio-state-${ACCOUNT_ID}-apne1" \
+            --key "raisetech-aws-labs/dev/terraform.tfstate" \
+            --query 'ContentLength' \
+            --output text
