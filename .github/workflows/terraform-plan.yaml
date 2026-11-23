@@ -1,0 +1,52 @@
+
+name: Terraform Plan
+
+# 手動実行のみ
+on:
+  workflow_dispatch:
+
+# GitHubとOIDCに必要な権限
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  plan:
+    name: Plan Terraform
+    runs-on: ubuntu-latest
+
+    # mainブランチのみ実行
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      # 1. リポジトリを取得
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # 2. Terraform CLIを準備
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: '1.17.2'
+
+      # 3. OIDC認証でAWSへ接続
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ap-northeast-1
+          role-session-name: RaiseTechTerraformPlan
+
+      # 4. S3 Backendを初期化
+      - name: Terraform Init
+        working-directory: terraform/environments/dev
+        run: terraform init -input=false -no-color
+
+      # 5. Terraform Planを実行
+      - name: Terraform Plan
+        working-directory: terraform/environments/dev
+        env:
+          TF_VAR_my_ip: ${{ vars.MY_IP_CIDR }}
+          TF_VAR_ec2_key_name: ${{ vars.EC2_KEY_NAME }}
+          TF_VAR_notification_email: ${{ secrets.NOTIFICATION_EMAIL }}
+        run: terraform plan -input=false -no-color -lock-timeout=3m
