@@ -1,3 +1,5 @@
+data "aws_caller_identity" "current" {}
+
 module "network" {
   source = "../../modules/network"
 
@@ -49,10 +51,11 @@ module "application" {
 
   depends_on = [module.logging]
 
-  vpc_id               = module.network.vpc_id
-  public_subnet_c_id   = module.network.public_subnet_c_id
-  alb_sg_id            = module.security.alb_sg_id
-  alb_logs_bucket_name = module.logging.alb_logs_bucket_name
+  vpc_id                       = module.network.vpc_id
+  public_subnet_c_id           = module.network.public_subnet_c_id
+  alb_sg_id                    = module.security.alb_sg_id
+  alb_logs_bucket_name         = module.logging.alb_logs_bucket_name
+  ec2_permissions_boundary_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/RaiseTechEC2PermissionsBoundary"
 }
 
 module "waf" {

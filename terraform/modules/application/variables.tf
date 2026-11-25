@@ -57,3 +57,8 @@ variable "alb_logs_bucket_name" {
   description = "S3 bucket name for ALB access logs"
   type        = string
 }
+
+variable "ec2_permissions_boundary_arn" {
+  description = "Permissions boundary ARN for the EC2 application role"
+  type        = string
+}

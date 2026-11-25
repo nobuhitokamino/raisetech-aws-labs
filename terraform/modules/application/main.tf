@@ -13,8 +13,9 @@ data "aws_iam_policy_document" "ec2_assume_role" {
 
 # IAM Role
 resource "aws_iam_role" "app" {
-  name               = "raisetech-tf-app-role"
-  assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
+  name                 = "raisetech-tf-app-role"
+  assume_role_policy   = data.aws_iam_policy_document.ec2_assume_role.json
+  permissions_boundary = var.ec2_permissions_boundary_arn
 }
 
 # Attach AWS Managed Policy
