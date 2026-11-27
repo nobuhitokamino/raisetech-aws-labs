@@ -1,0 +1,195 @@
+name: Terraform Apply
+
+# 手動実行のみ
+on:
+  workflow_dispatch:
+    inputs:
+      execute_apply:
+        description: 'Execute Terraform Apply'
+        required: true
+        type: boolean
+        default: false
+
+# GitHubとOIDCに必要な権限
+permissions:
+  contents: read
+  id-token: write
+
+# Terraformの同時実行制御
+concurrency:
+  group: terraform-dev
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Apply Terraform
+    runs-on: ubuntu-latest
+
+    # mainブランチのみ実行
+    if: github.ref == 'refs/heads/main'
+
+    # Apply専用Environment
+    environment: terraform-apply
+
+    # runコマンドの共通設定
+    defaults:
+      run:
+        shell: bash
+        working-directory: terraform/environments/dev
+
+    steps:
+      # 1. リポジトリを取得
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # 2. Terraform CLIを準備
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: '1.17.2'
+          terraform_wrapper: false
+
+      # 3. OIDC認証でAWSへ接続
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ap-northeast-1
+          role-session-name: RaiseTechTerraformApply
+
+      # 4. AWSアカウントとApply Roleの確認
+      - name: Verify AWS Identity
+        env:
+          EXPECTED_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+        run: |
+          ACTUAL_ACCOUNT_ID=$(aws sts get-caller-identity \
+            --query 'Account' \
+            --output text)
+
+          ACTUAL_ARN=$(aws sts get-caller-identity \
+            --query 'Arn' \
+            --output text)
+
+          EXPECTED_ARN="arn:aws:sts::${EXPECTED_ACCOUNT_ID}:assumed-role/RaiseTechTerraformApplyRole/RaiseTechTerraformApply"
+
+          if [[ "$ACTUAL_ACCOUNT_ID" != "$EXPECTED_ACCOUNT_ID" ]]; then
+            echo "Error: AWS account ID mismatch."
+            exit 1
+          fi
+
+          if [[ "$ACTUAL_ARN" != "$EXPECTED_ARN" ]]; then
+            echo "Error: IAM Role mismatch."
+            exit 1
+          fi
+
+          echo "AWS account and Apply Role verified."
+
+      # 5. S3 Backendを初期化
+      - name: Terraform Init
+        run: terraform init -input=false -no-color -lockfile=readonly
+
+      # 6. Terraform構成の検証
+      - name: Terraform Validate
+        run: terraform validate -no-color
+
+      # 7. Terraform Planファイルの生成
+      - name: Terraform Plan
+        env:
+          TF_VAR_my_ip: ${{ vars.MY_IP_CIDR }}
+          TF_VAR_ec2_key_name: ${{ vars.EC2_KEY_NAME }}
+          TF_VAR_notification_email: ${{ secrets.NOTIFICATION_EMAIL }}
+        run: |
+          umask 077
+
+          terraform plan \
+            -input=false \
+            -no-color \
+            -lock-timeout=3m \
+            -out="$RUNNER_TEMP/tfplan" \
+            > "$RUNNER_TEMP/terraform-plan.log" 2>&1
+
+          echo "Terraform plan file successfully created."
+
+      # 8. Plan内容の安全確認
+      - name: Verify Terraform Plan
+        id: verify_plan
+        run: |
+          umask 077
+
+          SUMMARY=$(terraform show -json "$RUNNER_TEMP/tfplan" \
+            2> "$RUNNER_TEMP/terraform-show.log" | jq -e '
+              (.resource_changes // []) as $changes |
+              {
+                add: ([$changes[] |
+                  select(.change.actions == ["create"])] | length),
+                change: ([$changes[] |
+                  select(.change.actions == ["update"])] | length),
+                destroy: ([$changes[] |
+                  select(.change.actions | index("delete"))] | length),
+                blocked: ([$changes[] |
+                  select(
+                    .change.actions != ["create"] and
+                    .change.actions != ["update"] and
+                    .change.actions != ["read"] and
+                    .change.actions != ["no-op"]
+                  )] | length),
+                applyable: .applyable,
+                complete: .complete,
+                errored: .errored
+              }
+            ')
+
+          echo "$SUMMARY" | jq .
+
+          if ! echo "$SUMMARY" | jq -e '
+            .blocked == 0 and
+            .complete == true and
+            .errored == false
+            (.applyable | type == "boolean")
+          ' > /dev/null; then
+            echo "Error: Terraform plan verification failed."
+            exit 1
+          fi
+
+          APPLYABLE=$(echo "$SUMMARY" | jq -r '.applyable')
+
+          echo "applyable=$APPLYABLE" >> "$GITHUB_OUTPUT"
+
+          echo "Terraform plan verification passed."
+
+      # 9. 保存したPlanによるApply
+      - name: Terraform Apply
+        if: inputs.execute_apply && steps.verify_plan.outputs.applyable == 'true'
+        run: |
+          umask 077
+
+          if terraform apply \
+            -input=false \
+            -no-color \
+            -lock-timeout=3m \
+            "$RUNNER_TEMP/tfplan" \
+            > "$RUNNER_TEMP/terraform-apply.log" 2>&1; then
+
+            echo "Terraform apply completed successfully."
+
+          else
+
+            echo "::error::Terraform apply failed."
+            exit 1
+
+          fi
+
+      # 10. 機密情報を含む一時ファイルの削除
+      - name: Cleanup Terraform Temporary Files
+        if: always()
+        working-directory: ${{ runner.temp }}
+        run: |
+          rm -f -- \
+            "$RUNNER_TEMP/tfplan" \
+            "$RUNNER_TEMP/terraform-plan.log" \
+            "$RUNNER_TEMP/terraform-show.log" \
+            "$RUNNER_TEMP/terraform-apply.log"
+
+          echo "Terraform temporary files removed."
