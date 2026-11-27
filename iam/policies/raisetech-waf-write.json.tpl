@@ -5,7 +5,10 @@
       "Sid": "CreateRaiseTechWebACL",
       "Effect": "Allow",
       "Action": "wafv2:CreateWebACL",
-      "Resource": "arn:aws:wafv2:ap-northeast-1:__ACCOUNT_ID__:regional/webacl/raisetech-tf-waf/*",
+      "Resource": [
+        "arn:aws:wafv2:ap-northeast-1:__ACCOUNT_ID__:regional/webacl/raisetech-tf-waf/*",
+        "arn:aws:wafv2:ap-northeast-1:__ACCOUNT_ID__:regional/managedruleset/*/*"
+      ],
       "Condition": {
         "StringEquals": {
           "aws:RequestedRegion": "ap-northeast-1",

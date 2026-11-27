@@ -52,6 +52,18 @@
       }
     },
     {
+      "Sid": "ManageTaggedRaiseTechSNSTopicAttributes",
+      "Effect": "Allow",
+      "Action": "sns:SetTopicAttributes",
+      "Resource": "arn:aws:sns:ap-northeast-1:__ACCOUNT_ID__:raisetech-tf-monitoring-alerts",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-1",
+          "aws:ResourceTag/Project": "raisetech-aws-labs"
+        }
+      }
+    },
+    {
       "Sid": "DeleteTaggedRaiseTechSNSTopic",
       "Effect": "Allow",
       "Action": "sns:DeleteTopic",

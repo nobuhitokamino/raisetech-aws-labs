@@ -97,7 +97,8 @@
       "Effect": "Allow",
       "Action": [
         "s3:ListBucket",
-        "s3:GetBucketLocation"
+        "s3:GetBucketLocation",
+        "s3:GetBucketAcl"
       ],
       "Resource": "arn:aws:s3:::raisetech-tf-alb-logs-*"
     },

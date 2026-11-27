@@ -7,8 +7,11 @@
       "Action": "logs:CreateLogGroup",
       "Resource": [
         "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:/raisetech/terraform/application",
+        "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:/raisetech/terraform/application:*",
         "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:aws-waf-logs-raisetech-tf",
-        "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:/aws/rds/instance/raisetech-tf-rds/error"
+        "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:aws-waf-logs-raisetech-tf:*",
+        "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:/aws/rds/instance/raisetech-tf-rds/error",
+        "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:/aws/rds/instance/raisetech-tf-rds/error:*"
       ],
       "Condition": {
         "StringEquals": {
@@ -29,8 +32,11 @@
       "Action": "logs:TagResource",
       "Resource": [
         "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:/raisetech/terraform/application",
+        "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:/raisetech/terraform/application:*",
         "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:aws-waf-logs-raisetech-tf",
-        "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:/aws/rds/instance/raisetech-tf-rds/error"
+        "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:aws-waf-logs-raisetech-tf:*",
+        "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:/aws/rds/instance/raisetech-tf-rds/error",
+        "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:/aws/rds/instance/raisetech-tf-rds/error:*"
       ],
       "Condition": {
         "StringEquals": {
@@ -46,12 +52,24 @@
       }
     },
     {
-      "Sid": "ManageRaiseTechLogRetentionAndReadTags",
+      "Sid": "ManageRaiseTechLogRetention",
       "Effect": "Allow",
-      "Action": [
-        "logs:PutRetentionPolicy",
-        "logs:ListTagsForResource"
+      "Action": "logs:PutRetentionPolicy",
+      "Resource": [
+        "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:/raisetech/terraform/application:*",
+        "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:aws-waf-logs-raisetech-tf:*",
+        "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:/aws/rds/instance/raisetech-tf-rds/error:*"
       ],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-1"
+        }
+      }
+    },
+    {
+      "Sid": "ReadRaiseTechLogGroupTags",
+      "Effect": "Allow",
+      "Action": "logs:ListTagsForResource",
       "Resource": [
         "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:/raisetech/terraform/application",
         "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:aws-waf-logs-raisetech-tf",
@@ -80,8 +98,11 @@
       "Action": "logs:DeleteLogGroup",
       "Resource": [
         "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:/raisetech/terraform/application",
+        "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:/raisetech/terraform/application:*",
         "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:aws-waf-logs-raisetech-tf",
-        "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:/aws/rds/instance/raisetech-tf-rds/error"
+        "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:aws-waf-logs-raisetech-tf:*",
+        "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:/aws/rds/instance/raisetech-tf-rds/error",
+        "arn:aws:logs:ap-northeast-1:__ACCOUNT_ID__:log-group:/aws/rds/instance/raisetech-tf-rds/error:*"
       ],
       "Condition": {
         "StringEquals": {
