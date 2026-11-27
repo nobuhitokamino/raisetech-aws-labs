@@ -98,7 +98,15 @@
       "Action": [
         "s3:ListBucket",
         "s3:GetBucketLocation",
-        "s3:GetBucketAcl"
+        "s3:GetBucketAcl",
+        "s3:GetBucketCORS",
+        "s3:GetBucketWebsite",
+        "s3:GetBucketVersioning",
+        "s3:GetAccelerateConfiguration",
+        "s3:GetBucketRequestPayment",
+        "s3:GetBucketLogging",
+        "s3:GetReplicationConfiguration",
+        "s3:GetBucketObjectLockConfiguration"
       ],
       "Resource": "arn:aws:s3:::raisetech-tf-alb-logs-*"
     },
