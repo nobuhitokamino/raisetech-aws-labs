@@ -13,6 +13,7 @@ variable "vpc_cidr" {
 variable "my_ip" {
   description = "Your public IPv4 address with /32"
   type        = string
+  sensitive   = true
 
   validation {
     condition = (
@@ -43,4 +44,5 @@ variable "ec2_key_name" {
 variable "notification_email" {
   description = "Email address for CloudWatch alarm notifications"
   type        = string
+  sensitive   = true
 }

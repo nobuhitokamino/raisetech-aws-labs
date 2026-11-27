@@ -97,7 +97,7 @@ jobs:
       # 7. Terraform Planファイルの生成
       - name: Terraform Plan
         env:
-          TF_VAR_my_ip: ${{ vars.MY_IP_CIDR }}
+          TF_VAR_my_ip: ${{ secrets.MY_IP_CIDR }}
           TF_VAR_ec2_key_name: ${{ vars.EC2_KEY_NAME }}
           TF_VAR_notification_email: ${{ secrets.NOTIFICATION_EMAIL }}
         run: |
@@ -146,7 +146,7 @@ jobs:
           if ! echo "$SUMMARY" | jq -e '
             .blocked == 0 and
             .complete == true and
-            .errored == false
+            .errored == false and
             (.applyable | type == "boolean")
           ' > /dev/null; then
             echo "Error: Terraform plan verification failed."
@@ -181,7 +181,49 @@ jobs:
 
           fi
 
-      # 10. 機密情報を含む一時ファイルの削除
+      # 10. Terraformエラーの分類
+      - name: Diagnose Terraform Failure
+        if: failure()
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: |
+          for LOG_FILE in \
+            "$RUNNER_TEMP/terraform-plan.log" \
+            "$RUNNER_TEMP/terraform-show.log" \
+            "$RUNNER_TEMP/terraform-apply.log"
+          do
+            if [[ ! -s "$LOG_FILE" ]]; then
+              continue
+            fi
+
+            echo "Checking $(basename "$LOG_FILE")"
+
+            if grep -Eiq 'AccessDenied|UnauthorizedOperation|AccessDeniedException|not authorized' "$LOG_FILE"; then
+              echo "::warning::Possible IAM permission error."
+
+            elif grep -Eiq 'ExpiredToken|InvalidClientTokenId|InvalidIdentityToken' "$LOG_FILE"; then
+              echo "::warning::Possible AWS authentication error."
+
+            elif grep -Eiq 'Error acquiring the state lock' "$LOG_FILE"; then
+              echo "::warning::Possible Terraform state lock error."
+
+            elif grep -Eiq 'Saved plan is stale|Saved plan does not match' "$LOG_FILE"; then
+              echo "::warning::Possible Terraform plan mismatch."
+
+            elif grep -Eiq 'Throttling|RequestLimitExceeded|TooManyRequests' "$LOG_FILE"; then
+              echo "::warning::Possible AWS API throttling."
+
+            elif grep -Eiq 'timeout|timed out|deadline exceeded' "$LOG_FILE"; then
+              echo "::warning::Possible timeout error."
+
+            else
+              echo "No known error pattern detected."
+            fi
+          done
+
+          echo "Check the failed step and AWS CloudTrail for further investigation."
+
+      # 11. 機密情報を含む一時ファイルの削除
       - name: Cleanup Terraform Temporary Files
         if: always()
         working-directory: ${{ runner.temp }}

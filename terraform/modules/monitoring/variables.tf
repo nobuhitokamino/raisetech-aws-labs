@@ -1,6 +1,7 @@
 variable "notification_email" {
   description = "Email address for SNS alarm notifications"
   type        = string
+  sensitive   = true
 }
 
 variable "alb_full_name" {

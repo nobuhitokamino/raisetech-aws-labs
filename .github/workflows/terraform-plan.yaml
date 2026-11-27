@@ -33,6 +33,7 @@ jobs:
         uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: '1.17.2'
+          terraform_wrapper: false
 
       # 3. OIDC認証でAWSへ接続
       - name: Configure AWS credentials
@@ -45,13 +46,114 @@ jobs:
       # 4. S3 Backendを初期化
       - name: Terraform Init
         working-directory: terraform/environments/dev
-        run: terraform init -input=false -no-color
+        run: terraform init -input=false -no-color -lockfile=readonly
 
       # 5. Terraform Planを実行
       - name: Terraform Plan
         working-directory: terraform/environments/dev
         env:
-          TF_VAR_my_ip: ${{ vars.MY_IP_CIDR }}
+          TF_VAR_my_ip: ${{ secrets.MY_IP_CIDR }}
           TF_VAR_ec2_key_name: ${{ vars.EC2_KEY_NAME }}
           TF_VAR_notification_email: ${{ secrets.NOTIFICATION_EMAIL }}
-        run: terraform plan -input=false -no-color -lock-timeout=3m
+        shell: bash
+        run: |
+          umask 077
+
+          if terraform plan \
+            -input=false \
+            -no-color \
+            -lock-timeout=3m \
+            -out="$RUNNER_TEMP/tfplan" \
+            > "$RUNNER_TEMP/terraform-plan.log" 2>&1; then
+
+            echo "Terraform plan completed successfully."
+
+          else
+
+            echo "::error::Terraform plan failed."
+            exit 1
+
+          fi
+
+      # 6. Planの変更件数を表示
+      - name: Summarize Terraform Plan
+        working-directory: terraform/environments/dev
+        shell: bash
+        run: |
+          umask 077
+
+          terraform show -json "$RUNNER_TEMP/tfplan" \
+            2> "$RUNNER_TEMP/terraform-show.log" | jq -e '
+              (.resource_changes // []) as $changes |
+              {
+                add: ([$changes[] |
+                  select(.change.actions | index("create"))] | length),
+                change: ([$changes[] |
+                  select(.change.actions == ["update"])] | length),
+                destroy: ([$changes[] |
+                  select(.change.actions | index("delete"))] | length),
+                replace: ([$changes[] |
+                  select(
+                    (.change.actions | index("create")) != null and
+                    (.change.actions | index("delete")) != null
+                  )] | length),
+                applyable: .applyable,
+                complete: .complete,
+                errored: .errored
+              }
+            '
+
+      # 7. Terraformエラーの分類
+      - name: Diagnose Terraform Failure
+        if: failure()
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: |
+          for LOG_FILE in \
+            "$RUNNER_TEMP/terraform-plan.log" \
+            "$RUNNER_TEMP/terraform-show.log" \
+            "$RUNNER_TEMP/terraform-apply.log"
+          do
+            if [[ ! -s "$LOG_FILE" ]]; then
+              continue
+            fi
+
+            echo "Checking $(basename "$LOG_FILE")"
+
+            if grep -Eiq 'AccessDenied|UnauthorizedOperation|AccessDeniedException|not authorized' "$LOG_FILE"; then
+              echo "::warning::Possible IAM permission error."
+
+            elif grep -Eiq 'ExpiredToken|InvalidClientTokenId|InvalidIdentityToken' "$LOG_FILE"; then
+              echo "::warning::Possible AWS authentication error."
+
+            elif grep -Eiq 'Error acquiring the state lock' "$LOG_FILE"; then
+              echo "::warning::Possible Terraform state lock error."
+
+            elif grep -Eiq 'Saved plan is stale|Saved plan does not match' "$LOG_FILE"; then
+              echo "::warning::Possible Terraform plan mismatch."
+
+            elif grep -Eiq 'Throttling|RequestLimitExceeded|TooManyRequests' "$LOG_FILE"; then
+              echo "::warning::Possible AWS API throttling."
+
+            elif grep -Eiq 'timeout|timed out|deadline exceeded' "$LOG_FILE"; then
+              echo "::warning::Possible timeout error."
+
+            else
+              echo "No known error pattern detected."
+            fi
+          done
+
+          echo "Check the failed step and AWS CloudTrail for further investigation."
+
+      # 8. 機密情報を含む一時ファイルの削除
+      - name: Cleanup Terraform Temporary Files
+        if: always()
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: |
+          rm -f -- \
+            "$RUNNER_TEMP/tfplan" \
+            "$RUNNER_TEMP/terraform-plan.log" \
+            "$RUNNER_TEMP/terraform-show.log"
+
+          echo "Terraform temporary files removed."

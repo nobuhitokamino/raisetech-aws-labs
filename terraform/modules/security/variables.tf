@@ -11,4 +11,5 @@ variable "vpc_cidr" {
 variable "my_ip" {
   description = "IPv4 CIDR allowed for SSH access"
   type        = string
+  sensitive   = true
 }
