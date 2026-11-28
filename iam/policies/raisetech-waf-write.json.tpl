@@ -98,17 +98,25 @@
       }
     },
     {
-      "Sid": "AssociateAndReadRaiseTechWebACL",
+      "Sid": "AssociateRaiseTechWebACL",
       "Effect": "Allow",
-      "Action": [
-        "wafv2:AssociateWebACL",
-        "wafv2:GetWebACLForResource"
-      ],
+      "Action": "wafv2:AssociateWebACL",
       "Resource": "arn:aws:wafv2:ap-northeast-1:__ACCOUNT_ID__:regional/webacl/raisetech-tf-waf/*",
       "Condition": {
         "StringEquals": {
           "aws:RequestedRegion": "ap-northeast-1",
           "aws:ResourceTag/Project": "raisetech-aws-labs"
+        }
+      }
+    },
+    {
+      "Sid": "ReadRegionalWebACLAssociation",
+      "Effect": "Allow",
+      "Action": "wafv2:GetWebACLForResource",
+      "Resource": "arn:aws:wafv2:ap-northeast-1:__ACCOUNT_ID__:regional/webacl/*/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-1"
         }
       }
     },
