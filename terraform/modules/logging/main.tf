@@ -1,6 +1,7 @@
 # ALB Access Logs Bucket
 resource "aws_s3_bucket" "alb_logs" {
   bucket_prefix = "raisetech-tf-alb-logs-"
+  force_destroy = true
 
   tags = {
     Name = "raisetech-tf-alb-logs"

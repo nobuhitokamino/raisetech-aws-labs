@@ -29,10 +29,8 @@ module "database" {
   ]
 
   rds_sg_id               = module.security.rds_sg_id
-  rds_instance_identifier = var.rds_instance_identifier
+  rds_instance_identifier = module.logging.rds_instance_identifier
   db_username             = var.db_username
-
-  depends_on = [module.logging]
 }
 
 module "application" {
@@ -48,8 +46,6 @@ module "application" {
 
   application_log_group_name = module.logging.application_log_group_name
   aws_region                 = var.aws_region
-
-  depends_on = [module.logging]
 
   vpc_id                       = module.network.vpc_id
   public_subnet_c_id           = module.network.public_subnet_c_id

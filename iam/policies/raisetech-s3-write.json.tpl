@@ -106,9 +106,24 @@
         "s3:GetBucketRequestPayment",
         "s3:GetBucketLogging",
         "s3:GetReplicationConfiguration",
-        "s3:GetBucketObjectLockConfiguration"
+        "s3:GetBucketObjectLockConfiguration",
+        "s3:ListBucketVersions"
       ],
       "Resource": "arn:aws:s3:::raisetech-tf-alb-logs-*"
+    },
+    {
+      "Sid": "DeleteRaiseTechALBLogObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:DeleteObject",
+        "s3:DeleteObjectVersion"
+      ],
+      "Resource": "arn:aws:s3:::raisetech-tf-alb-logs-*/*",
+      "Condition": {
+        "StringEquals": {
+          "s3:ResourceAccount": "__ACCOUNT_ID__"
+        }
+      }
     },
     {
       "Sid": "DeleteRaiseTechALBLogsBucket",
