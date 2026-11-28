@@ -128,7 +128,8 @@
                 "elasticloadbalancing:DescribeListeners",
                 "elasticloadbalancing:DescribeListenerAttributes",
                 "elasticloadbalancing:DescribeRules",
-                "elasticloadbalancing:DescribeTags"
+                "elasticloadbalancing:DescribeTags",
+                "elasticloadbalancing:DescribeCapacityReservation"
             ],
             "Resource": "*",
             "Condition": {

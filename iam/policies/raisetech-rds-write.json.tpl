@@ -116,7 +116,7 @@
             "Sid": "ReadApplicationDBInstance",
             "Effect": "Allow",
             "Action": "rds:DescribeDBInstances",
-            "Resource": "arn:aws:rds:ap-northeast-1:__ACCOUNT_ID__:db:raisetech-tf-rds",
+            "Resource": "arn:aws:rds:ap-northeast-1:__ACCOUNT_ID__:db:*",
             "Condition": {
                 "StringEquals": {
                     "aws:RequestedRegion": "ap-northeast-1"

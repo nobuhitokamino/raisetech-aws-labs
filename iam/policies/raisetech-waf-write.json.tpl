@@ -128,6 +128,17 @@
       }
     },
     {
+      "Sid": "ManageLegacyRaiseTechALBWAFAssociation",
+      "Effect": "Allow",
+      "Action": "elasticloadbalancing:SetWebACL",
+      "Resource": "arn:aws:elasticloadbalancing:ap-northeast-1:__ACCOUNT_ID__:loadbalancer/app/raisetech-tf-alb/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-1"
+        }
+      }
+    },
+    {
       "Sid": "DisassociateWebACLInTokyo",
       "Effect": "Allow",
       "Action": "wafv2:DisassociateWebACL",
