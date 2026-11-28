@@ -159,53 +159,6 @@ jobs:
 
           echo "Terraform plan verification passed."
 
-      # Temporary safety check for the force_destroy update
-      - name: Verify Force Destroy Change
-        if: steps.verify_plan.outputs.applyable == 'true'
-        run: |
-          umask 077
-
-          if ! terraform show -json "$RUNNER_TEMP/tfplan" \
-            2>> "$RUNNER_TEMP/terraform-show.log" | jq -e '
-              [
-                .resource_changes[]
-                | select(.mode == "managed")
-                | select(.change.actions != ["no-op"])
-              ] as $changes |
-
-              ($changes | length == 1) and
-              ($changes[0].address ==
-                "module.logging.aws_s3_bucket.alb_logs") and
-              ($changes[0].change.actions == ["update"]) and
-              ($changes[0].change.before.force_destroy == false) and
-              ($changes[0].change.after.force_destroy == true) and
-              (
-                ($changes[0].change.before | del(.force_destroy))
-                ==
-                ($changes[0].change.after | del(.force_destroy))
-              ) and
-              (
-                [
-                  $changes[0].change.after_unknown
-                  | .. | booleans
-                ] | any | not
-              ) and
-              (
-                [
-                  .resource_changes[]
-                  | select(.mode == "data")
-                  | select(.change.actions == ["read"])
-                ] | length == 0
-              )
-            ' > /dev/null; then
-
-            echo "::error::Unexpected Terraform changes detected."
-            exit 1
-
-          fi
-
-          echo "Only the expected force_destroy change was detected."
-
       # 9. 保存したPlanによるApply
       - name: Terraform Apply
         if: inputs.execute_apply && steps.verify_plan.outputs.applyable == 'true'
