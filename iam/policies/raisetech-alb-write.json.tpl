@@ -8,7 +8,9 @@
             "Resource": "arn:aws:elasticloadbalancing:ap-northeast-1:__ACCOUNT_ID__:loadbalancer/app/raisetech-tf-alb/*",
             "Condition": {
                 "StringEquals": {
-                    "aws:RequestTag/Project": "raisetech-aws-labs",
+                    "aws:RequestTag/Project": "raisetech-aws-labs"
+                },
+                "StringEqualsIfExists": {
                     "elasticloadbalancing:Scheme": "internet-facing"
                 }
             }

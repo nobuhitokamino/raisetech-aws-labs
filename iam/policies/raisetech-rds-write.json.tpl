@@ -49,6 +49,23 @@
             }
         },
         {
+            "Sid": "UseApprovedGroupsForDBInstanceCreation",
+            "Effect": "Allow",
+            "Action": "rds:CreateDBInstance",
+            "Resource": [
+                "arn:aws:rds:ap-northeast-1:__ACCOUNT_ID__:subgrp:raisetech-tf-db-subnet-group",
+                "arn:aws:rds:ap-northeast-1:__ACCOUNT_ID__:pg:default.mysql8.0",
+                "arn:aws:rds:ap-northeast-1:__ACCOUNT_ID__:pg:default.mysql8.4",
+                "arn:aws:rds:ap-northeast-1:__ACCOUNT_ID__:og:default:mysql-8-0",
+                "arn:aws:rds:ap-northeast-1:__ACCOUNT_ID__:og:default:mysql-8-4"
+            ],
+            "Condition": {
+                "StringEquals": {
+                    "aws:RequestedRegion": "ap-northeast-1"
+                }
+            }
+        },
+        {
             "Sid": "TagApplicationDBInstance",
             "Effect": "Allow",
             "Action": "rds:AddTagsToResource",
